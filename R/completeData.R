@@ -23,6 +23,7 @@
 #' @author AUTHOR [AUTHOR_2]
 #' @keywords KEYWORD_TERM
 #' @importFrom data.table CJ setkeyv shift rbindlist
+
 completeData =
   function(
     long_data,
@@ -71,7 +72,7 @@ completeData =
 
     shift.vars <- c("GRADE", invariant.vars)
     shift.var.names <-
-      paste0(c(shift.vars, names(conditional.vars)), "_LAG_", 0)
+      paste0(c(shift.vars, names(conditional.vars)), "_LAG_0")
     # takes care of 2 content area case. might not for 3...
     # shift.var.names <- paste(rep(shift.vars, each = 2),
     #                          c("LAG", "LEAD"), 0, sep = "_")
@@ -89,36 +90,38 @@ completeData =
 
     ###   Fill in with proximate year(s)
     ##    GRADE values
-    data.table::setkeyv(long_data_complete, c(shift.group, shift.period, valid.case))
-    shift.var.names <-
-      paste("GRADE",
-            rep(c("LAG", "LEAD"), each = shift.max),
-            rep(1:shift.max, 2),
-        sep = "_"
-      )
-    long_data_complete[,
-      (shift.var.names) := data.table::shift(.SD, n = c(1:shift.max, -(1:shift.max))),
-      .SDcols = "GRADE",
-      by = shift.group
-    ]
+    if (shift.max > 0L) {
+      data.table::setkeyv(long_data_complete, c(shift.group, shift.period, valid.case))
+      shift.var.names <-
+        paste("GRADE",
+              rep(c("LAG", "LEAD"), each = shift.max),
+              rep(1:shift.max, 2),
+          sep = "_"
+        )
+      long_data_complete[,
+        (shift.var.names) := data.table::shift(.SD, n = c(1:shift.max, -(1:shift.max))),
+        .SDcols = "GRADE",
+        by = shift.group
+      ]
 
-    long_data_complete[, TMP_GRADE := as.numeric(GRADE)]
-    for (smx in 1:shift.max) {
-      long_data_complete[is.na(TMP_GRADE),
-        TMP_GRADE := as.numeric(get(paste0("GRADE_LAG_", smx))) + smx
-      ]
-      long_data_complete[is.na(TMP_GRADE),
-        TMP_GRADE := as.numeric(get(paste0("GRADE_LEAD_", smx))) - smx
-      ]
+      long_data_complete[, TMP_GRADE := as.numeric(GRADE)]
+      for (smx in 1:shift.max) {
+        long_data_complete[is.na(TMP_GRADE),
+          TMP_GRADE := as.numeric(get(paste0("GRADE_LAG_", smx))) + smx
+        ]
+        long_data_complete[is.na(TMP_GRADE),
+          TMP_GRADE := as.numeric(get(paste0("GRADE_LEAD_", smx))) - smx
+        ]
+      }
+      mode(long_data_complete$TMP_GRADE) <- mode(long_data_complete$GRADE)
+      long_data_complete[is.na(GRADE), GRADE := TMP_GRADE]
+      long_data_complete[, TMP_GRADE := NULL]
+      long_data_complete[, (shift.var.names) := NULL]
     }
-    mode(long_data_complete$TMP_GRADE) <- mode(long_data_complete$GRADE)
-    long_data_complete[is.na(GRADE), GRADE := TMP_GRADE]
-    long_data_complete[, TMP_GRADE := NULL]
-    long_data_complete[, (shift.var.names) := NULL]
     long_data_complete <- long_data_complete[GRADE %in% grade.levels, ]
 
     ##    Time-invariant variable values
-    if (length(invariant.vars)) {
+    if (!is.null(invariant.vars) & shift.max > 0L) {
       data.table::setkeyv(
         long_data_complete,
         c(shift.group, shift.period, valid.case)
@@ -144,11 +147,11 @@ completeData =
           ]
         }
       }
+      long_data_complete[, (shift.var.names) := NULL]
     }
-    long_data_complete[, (shift.var.names) := NULL]
 
     ##    Variable values with conditional statements
-    if (!is.null(conditional.vars)) {
+    if (!is.null(conditional.vars) & shift.max > 0L) {
       for (cndvar in names(conditional.vars)) {
         shift.var.names <-
           paste(cndvar,

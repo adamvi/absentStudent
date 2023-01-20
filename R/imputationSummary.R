@@ -30,7 +30,6 @@
 #' @keywords misc
 #' @keywords models
 #' @importFrom stats na.omit var sd qt pf cor
-#' @importFrom fixest se
 #' @importFrom data.table data.table rbindlist
 
 imputationSummary =
@@ -80,11 +79,11 @@ imputationSummary =
 
   smry_obs <- data.to.summarize[, list(
         Mean_SS_Observed = mean(SCALE_SCORE_OBSERVED, na.rm = TRUE),
-        SE_SS_Observed = fixest::se(SCALE_SCORE_OBSERVED, na.rm = TRUE),
+        SE_SS_Observed = se(SCALE_SCORE_OBSERVED, na.rm = TRUE),
         Mean_SGP_Observed = mean(SGP_OBSERVED, na.rm = TRUE),
-        SE_SGP_Observed = fixest::se(SGP_OBSERVED, na.rm = TRUE),
+        SE_SGP_Observed = se(SGP_OBSERVED, na.rm = TRUE),
         Mean_SGPB_Observed = mean(SGP_BASELINE_OBSERVED, na.rm = TRUE),
-        SE_SGPB_Observed = fixest::se(SGP_BASELINE_OBSERVED, na.rm = TRUE),
+        SE_SGPB_Observed = se(SGP_BASELINE_OBSERVED, na.rm = TRUE),
         Percent_Missing = (sum(is.na(SCALE_SCORE_OBSERVED))/.N)*100, N=.N),
     keyby = c(institution.level, summary.level)]
 
