@@ -9,8 +9,8 @@
 #' @param visit PARAM_DESCRIPTION, Default: NULL
 #' @param seed PARAM_DESCRIPTION, Default: NA
 #' @param nnodes PARAM_DESCRIPTION, Default: 5
-#' @param cluster.type PARAM_DESCRIPTION, Default: NULL
-#' @param packages PARAM_DESCRIPTION, Default: NULL
+#' @param cluster.type PARAM_DESCRIPTION, Default: "FORK"
+#' @param packages PARAM_DESCRIPTION, Default: "mice"
 #' @return OUTPUT_DESCRIPTION
 #' @details DETAILS
 #' @examples 
@@ -43,57 +43,58 @@ parMICE =
     visit = NULL,
     seed = NA,
     nnodes = 5,
-    cluster.type = NULL,
-    packages = NULL
+    cluster.type = "FORK",
+    packages = "mice"
   ) {
 
+    ##  Argument checks
     if (missing(bloks) || missing(frmlas)) {
         stop("The `bloks` OR `frmlas` arguments are not defined. Currently, this case is not handled by the parMICE function")
-    }
-
-    if (is.null(cluster.type)) cluster.type <- "PSOCK"
-
-    tmp.cl <- parallel::makeCluster(spec = nnodes, type = cluster.type)
-    if (!is.na(seed)) {
-        parallel::clusterSetRNGStream(cl = tmp.cl, iseed = seed)
     }
 
     if (maxit == 0) {
         stop("The argument maxit = 0 is not relevant for parallel calculation, use the mice function from the mice package")
     }
 
+   ##  Make/set up cluster
+    tmp.cl <- parallel::makeCluster(spec = nnodes, type = cluster.type)
+    if (!is.na(seed)) {
+        parallel::clusterSetRNGStream(cl = tmp.cl, iseed = seed)
+    }
+
+    pkg.list <- paste0("require(", packages, ")", collapse = ";")
     parallel::clusterExport(
         cl = tmp.cl,
         varlist =
-            list(
-                "maxit",
-                "meth",
-                "bloks",
-                "frmlas",
-                "visit",
-                "packages"
-            ),
+            list("pkg.list"),
         envir = environment()
     )
 
     if (cluster.type != "FORK") {
         parallel::clusterExport(
             cl = tmp.cl,
-            varlist = list("data"),
+            varlist = list(
+                "maxit",
+                "meth",
+                "bloks",
+                "frmlas",
+                "visit",
+                "data"),
             envir = environment()
         )
     }
 
     parallel::clusterEvalQ(
         cl = tmp.cl,
-        expr = eval(parse(text = paste0("require(", packages, ")", collapse = ";")))
+        expr = eval(parse(text = pkg.list))
     )
 
     res <-
         parallel::parSapply(
             cl = tmp.cl,
             X = 1:m,
-            FUN =
+            FUN = #miceInt(data, maxit, meth, visit, bloks, frmlas),
+            #       ^  `miceInt` in utils.R
                 \(f) {
                 res.mice <-
                     mice::mice(

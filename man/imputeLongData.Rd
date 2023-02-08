@@ -13,7 +13,6 @@ imputeLongData(
   focus.variable = "SCALE_SCORE",
   student.factors = NULL,
   group = NULL,
-  missing.group.id = -99999L,
   impute.long = FALSE,
   impute.method = NULL,
   parallel.config = NULL,
@@ -63,11 +62,6 @@ Default: NULL}
 \item{group}{Grouping indicator (e.g. institution ID) used to construct group
 level means of the `focus.variable` and any `student.factors` provided.
 Default: NULL}
-
-\item{missing.group.id}{If `group` is provided, a placeholder value for
-students with no group affiliation (possibly internally after the `long_data`
-has been widened and extended).
-Default: -99999L}
 
 \item{impute.long}{Some imputation methods (e.g., "2l.pan") can be used to
 impute the data in a longitudinal form (clustered by student over time/grade),

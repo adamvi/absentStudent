@@ -19,3 +19,17 @@
   }
   (x - mean(y, na.rm = rm.na)) / stats::sd(y, na.rm = rm.na)
 }
+
+##  parMICE Internal function
+`miceInt` = function(data, maxit, meth, visit, bloks, frmlas) {
+    mice::mice(
+        data = data,
+        m = 1,
+        maxit = maxit,
+        method = meth,
+        visitSequence = visit,
+        blocks = bloks,
+        formulas = frmlas
+    )
+}
+

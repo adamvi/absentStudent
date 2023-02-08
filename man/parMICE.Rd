@@ -14,8 +14,8 @@ parMICE(
   visit = NULL,
   seed = NA,
   nnodes = 5,
-  cluster.type = NULL,
-  packages = NULL
+  cluster.type = "FORK",
+  packages = "mice"
 )
 }
 \arguments{
@@ -37,9 +37,9 @@ parMICE(
 
 \item{nnodes}{PARAM_DESCRIPTION, Default: 5}
 
-\item{cluster.type}{PARAM_DESCRIPTION, Default: NULL}
+\item{cluster.type}{PARAM_DESCRIPTION, Default: "FORK"}
 
-\item{packages}{PARAM_DESCRIPTION, Default: NULL}
+\item{packages}{PARAM_DESCRIPTION, Default: "mice"}
 }
 \value{
 OUTPUT_DESCRIPTION

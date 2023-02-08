@@ -32,10 +32,6 @@
 #' @param group Grouping indicator (e.g. institution ID) used to construct group
 #'  level means of the `focus.variable` and any `student.factors` provided.
 #'  Default: NULL
-#' @param missing.group.id If `group` is provided, a placeholder value for
-#'  students with no group affiliation (possibly internally after the `long_data`
-#'  has been widened and extended).
-#'  Default: -99999L
 #' @param impute.long Some imputation methods (e.g., "2l.pan") can be used to
 #'  impute the data in a longitudinal form (clustered by student over time/grade),
 #'  in which case this argument should be set to TRUE. Defaults to FALSE, meaning
@@ -108,7 +104,6 @@ imputeLongData =
     focus.variable = "SCALE_SCORE",
     student.factors = NULL,
     group = NULL,
-    missing.group.id = -99999L,
     impute.long = FALSE,
     impute.method = NULL,
     parallel.config = NULL, # define cores, packages, cluster.type
@@ -172,7 +167,7 @@ imputeLongData =
   }
 
   long.to.wide.vars <-
-    unique(c(focus.variable, group, student.factors)) # "CONTENT_AREA", "GRADE",
+    unique(c(focus.variable, group, student.factors))
 
   ###  Cycle through configs to get results by cohort
   res.list <- vector(mode = "list", length = length(configs))
@@ -525,36 +520,21 @@ imputeLongData =
     #####
 
     if (!impute.long || cohort.iter$analysis.type == "STATUS") {
-      ##  Final (if necessary) whittling down of the data
+      ##  Clean up all NA groups (if necessary)
       if (length(group) & toupper(impute.method) == "PANIMPUTE") {
-        # init.where <- tmp.where <- mice::make.where(data = wide_data) # init.where <-
-        na_removed_records <- data.table::data.table()
-
-        for (gv in group.vars) { # [3:6]
-          # if (cluster.by.group) {
+        for (gv in group.vars) {
           if (cohort.iter$analysis.type == "GROWTH") {
             tmp.imp.var <- paste0(focus.variable, ".", sub(".+?[.]", "", gv))
             tmp.fixd.ef <- focus.vars %w/o% tmp.imp.var
-
-            invisible(wide_data[is.na(get(gv)), eval(gv) := missing.group.id])
 
             ## Check for clusters with all NA values
             na_check <-
               wide_data[, list(ALL_NA = all(is.na(get(tmp.imp.var)))), keyby = gv]
 
             if (length(all.na.ids <- na_check[ALL_NA == TRUE, get(gv)])) {
-              na_removed_records <-
-                data.table::rbindlist(
-                  list(
-                    na_removed_records,
-                    wide_data[get(gv) %in% all.na.ids, ]
-                  )
-                )
-              wide_data <- wide_data[!(get(gv) %in% all.na.ids), ]
+              wide_data[get(gv) %in% all.na.ids, eval(gv) := NA]
             }
           } else {
-            invisible(wide_data[is.na(get(gv)), eval(gv) := missing.group.id])
-
             ## Check for clusters with all NA values
             na.check.expression <-
               paste0("ALL_NA_", focus.vars, # "_", group,
@@ -573,20 +553,11 @@ imputeLongData =
 
             for (nac in names(na.check.expression)) {
               if (length(all.na.ids <- na_check[get(nac) == TRUE, get(gv)])) {
-                na_removed_records <-
-                  data.table::rbindlist(
-                    list(
-                      na_removed_records,
-                      wide_data[get(gv) %in% all.na.ids, ]
-                    )
-                  )
-                wide_data <- wide_data[!(get(gv) %in% all.na.ids), ]
+                wide_data[get(gv) %in% all.na.ids, eval(gv) := NA]
               }
             }
           }
         }
-      } else {
-        na_removed_records <- NULL
       }
 
       #  re-check & remove columns that are all identical
@@ -602,23 +573,21 @@ imputeLongData =
         # student.factors <- student.factors %w/o% na.var.nms
         group.vars <- group.vars %w/o% na.var.nms
         wide_data <- wide_data[, names(wide_data)[!same.same], with = FALSE]
-        if (length(na_removed_records)) {
-          na_removed_records <-
-            na_removed_records[, names(na_removed_records)[!same.same], with = FALSE]
-        }
       }
 
       ##  arguments/objects for `mice`
       tmp.meth <-
-        rep(impute.method, length(focus.vars)) |>
-          stats::setNames(focus.vars)
+        c(rep("pmm", length(group.vars)),
+          rep(impute.method, length(focus.vars))
+         ) |>
+          stats::setNames(c(group.vars, focus.vars))
       tmp.pred <- names(wide_data) %w/o% "ID"
 
-          ###   `mice`/... argument alignment
+      ###   `mice`/... argument alignment
       if (!"blocks" %in% names(call)) {
         tmp.blok <-
           mice::make.blocks(
-            data = focus.vars,
+            data = c(group.vars, focus.vars),
             calltype = "formula"
           )
       } else {
@@ -627,10 +596,34 @@ imputeLongData =
 
       if (!"formulas" %in% names(call)) {
         tmp.fmla <- list()
+        if (length(group)) {
+          for (gv in group.vars) {
+            tmp.grd.subj <- sub(".+?[.]", "", gv)
+            tmp.imp.var <- paste0(focus.variable, ".", tmp.grd.subj)
+            tmp.rhs <- 
+              ifelse(length(group.vars) > 1,
+                paste0("factor(", group.vars %w/o% gv, ")"),
+                1
+              )
+              #  c(group.vars %w/o% gv, focus.vars %w/o% tmp.imp.var)
+            if (length(student.factors)) {
+                tmp.rhs <-
+                  c(tmp.rhs,
+                    grep(
+                      paste0(student.factors, ".", tmp.grd.subj, collapse = "|"),
+                      tmp.pred,
+                      value = TRUE
+                    )
+                  )
+            }
+            tmp.fmla[[gv]] <-
+              paste(gv, "~", paste(tmp.rhs, collapse = " + ")) |>
+                stats::as.formula()
+          }
+        }
         for (fv in focus.vars) {
-          tmp.iv <- focus.vars %w/o% fv# tmp.pred[fv, tmp.pred[fv, ] != 0]
-          tmp.grd.subj <-
-            gsub(paste0(focus.variable, "."), "", fv)
+          tmp.iv <- focus.vars %w/o% fv
+          tmp.grd.subj <- sub(".+?[.]", "", fv)
 
           if (length(student.factors)) {
             tmp.sf <-
@@ -666,7 +659,7 @@ imputeLongData =
                 )
             }
 
-            if (length(tmp.iv) && toupper(impute.method) == "PANIMPUTE") { #  && cohort.iter$analysis.type == "STATUS"
+            if (length(tmp.iv) && toupper(impute.method) == "PANIMPUTE") {
               rhs <-
                 c(rhs,
                   paste0("I(clusterMeans(", tmp.iv, ", ", tmp.gv, "))", collapse = " + ")
@@ -676,7 +669,7 @@ imputeLongData =
               rslope <- NULL
             }
 
-            if (toupper(impute.method) == "PANIMPUTE") { #  && cohort.iter$analysis.type == "STATUS"
+            if (toupper(impute.method) == "PANIMPUTE") {
               rhs <- c(rhs, paste0("(1", rslope, "|", tmp.gv, ")"))
             }
 
@@ -697,7 +690,6 @@ imputeLongData =
           c("ID", "GRADE", tmp.focus.variable %w/o% group),
           with = FALSE
         ]
-      na_removed_records <- NULL
 
       if (is.null(impute.method)) {
         tmp.meth <- "2l.pan"
@@ -711,23 +703,13 @@ imputeLongData =
       tmp.pred[focus.variable, "GRADE"] <- 2 # random effect for GRADE (time)
     }
 
-    if (length(na_removed_records)) {
-      message(
-        paste0("\n\t\t", nrow(na_removed_records),
-              " student(s) will not be imputed with `", impute.method, "`.
-                All records in their `group` are missing for one or more years.
-                Imputations will be attempted without `group` via `pmm` separately.\n"
-        )  #  Spacing above should align text to left (with tab padding).
-      )
-    }
-
     switch(parexecute,
       SEQ = imp <-
         suppressWarnings(
           mice::mice(
             data = wide_data, # where = tmp.where, ignore = tmp.ign, # can't use `where` or `ignore` with panImpute
             m = M, method = tmp.meth,
-            visitSequence = focus.vars,
+            visitSequence = c(group.vars, focus.vars),
             blocks = tmp.blok, formulas = tmp.fmla,
             maxit = maxit, seed = seed, print = verbose,
             ...
@@ -736,16 +718,29 @@ imputeLongData =
         suppressWarnings(
           parMICE(
             data = wide_data, m = M, maxit = maxit, meth = tmp.meth,
-            bloks = tmp.blok, frmlas = tmp.fmla, visit = focus.vars,
+            bloks = tmp.blok, frmlas = tmp.fmla,
+            visit = c(group.vars, focus.vars),
             seed = seed, nnodes = parallel.config$cores,
             cluster.type = parallel.config$cluster.type,
             packages = parallel.config$packages
         ))
       )
 
+    # imp <- mice::futuremice(
+    #    data = wide_data,
+    #    parallelseed = seed,
+    #    n.core = parallel.config$cores,
+    #    use.logical = TRUE,
+    #    future.plan = "multicore", # "multisession", parallel.config$cluster.type
+    #    m = M, maxit = maxit, meth = tmp.meth,
+    #    visitSequence = c(group.vars, focus.vars),
+    #    blocks = tmp.blok, formulas = tmp.fmla,
+    #    print = verbose, type = NULL, ...
+    #  )
+
     ##  Save some diagnostic plots
     if (cohort.iter$analysis.type == "GROWTH") {
-      imp.type <- "GROWTH_" # paste0(current.subject, "_")
+      imp.type <- "GROWTH_"
     } else {
       imp.type <- "STATUS_"
     }
@@ -780,7 +775,7 @@ imputeLongData =
         ),
       width = 11, height = 8
     )
-    if (!impute.long) { # && cohort.iter$analysis.type == "GROWTH"
+    if (!impute.long) {
       tryCatch(
         print(mice::densityplot(
           imp,
@@ -814,54 +809,6 @@ imputeLongData =
           measure.vars = focus.vars
         )
 
-      if (length(na_removed_records)) {
-        tmp_imputed <-
-          rbindlist(
-            list(
-              na_removed_records[, NA_RMVD := TRUE],
-              data.table::as.data.table(
-                mice::complete(imp, action = M, include = FALSE)
-              )[, NA_RMVD := FALSE]
-            )
-          )
-        if (cohort.iter$analysis.type != "STATUS") {
-          tmp_imputed[, grep(group, names(tmp_imputed)) := NULL]
-        }
-        tmp.meth2 <-
-        rep("", ncol(tmp_imputed)) |>
-          stats::setNames(names(tmp_imputed))
-        tmp.meth2[focus.vars] <- "pmm"
-        imp2 <- #mice::mice(tmp_imputed)
-          suppressWarnings(
-            mice::mice(
-              data = tmp_imputed,
-              m = M, method = tmp.meth2,
-              visitSequence = focus.vars,
-              maxit = maxit, seed = seed, print = verbose
-            )
-          )
-        long_impute2 <-
-          data.table::as.data.table(
-            mice::complete(imp2, action = "long", include = TRUE)
-          )[NA_RMVD == TRUE][, NA_RMVD := NULL]
-        wide_impute2 <-
-          data.table::melt(
-            data = long_impute2,
-            id.vars = long.ids,
-            value.name = focus.variable,
-            variable.name = "GRADE",
-            measure.vars = focus.vars
-          )
-        wide_imputed <-
-          data.table::rbindlist(
-            list(wide_impute2[, IMPUTE_METHOD := "pmm"],
-                 wide_imputed[, IMPUTE_METHOD := impute.method]
-            )
-          )
-      } else {
-        invisible(wide_imputed[, IMPUTE_METHOD := impute.method])
-      }
-
       if (cohort.iter$analysis.type == "STATUS") {
         wide_imputed[,
           CONTENT_AREA := gsub(paste0(".*", current.grade, "[.]"), "", GRADE)
@@ -876,10 +823,12 @@ imputeLongData =
 
         wide_imputed[,
           CONTENT_AREA :=
-            gsub(paste(paste0(".*", c(prior.grades, current.grade), "."), collapse = "|"), "", GRADE)
-          # gsub(paste(paste0(".*.", c(prior.grades, current.grade), "."), collapse = "|"), "", GRADE)
+            gsub(
+              paste(paste0(".*", c(prior.grades, current.grade), "."), collapse = "|"),
+              "", GRADE
+            )
         ][,
-          GRADE := #as.character(factor(GRADE, labels = cohort.iter[["grade.sequences"]]))
+          GRADE :=
             gsub(paste(paste0(".", unq.ca), collapse = "|"), "", GRADE)
         ][,
           YEAR :=
@@ -897,7 +846,7 @@ imputeLongData =
           formula = as.formula(
             paste(
               paste(long.ids %w/o% ".imp", collapse = " + "),
-                    "+ CONTENT_AREA + GRADE + YEAR + IMPUTE_METHOD ~ .imp"
+                    "+ CONTENT_AREA + GRADE + YEAR ~ .imp"
             )),
           value.var = focus.variable
         )
@@ -929,7 +878,7 @@ imputeLongData =
       c(focus.variable, paste0(focus.variable, ".IMP_", 1:M))
     )
     tmp.key <-
-      c(data.table::key(wide_imputed), focus.variable) %w/o% "IMPUTE_METHOD" # "ID", ..., "YEAR"
+      c(data.table::key(wide_imputed), focus.variable)# "ID", ..., "YEAR"
     data.table::setkeyv(wide_imputed, tmp.key)
     data.table::setkeyv(long_final, tmp.key)
     if (nrow(wide_imputed) >= nrow(long_final)) {
@@ -940,6 +889,10 @@ imputeLongData =
     # res.list[[K]] <- wide_imputed[long_final]
     rm(list = c("long_final", "wide_data", "wide_imputed", "imp"))
     invisible(gc())
+    message(
+      "\n\tFinished with ", current.year, " Grade ", current.grade,
+      ": ", date()
+    )
   }  ###  END K
 
   ###   Compile and format final imputed data set

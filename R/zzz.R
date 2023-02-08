@@ -7,6 +7,6 @@
       packageStartupMessage(crayon::magenta$bold("absentStudent",
         paste(paste0(unlist(strsplit(as.character(utils::packageVersion("absentStudent")), "[.]")),
         c(".", "-", ".", "")), collapse = ""),
-        " (1-13-2023). For help visit https://adamvi.github.io/absentStudent"))
+        " (2-9-2023). For help visit https://adamvi.github.io/absentStudent"))
   }
 }
