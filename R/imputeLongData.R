@@ -1,99 +1,48 @@
-#' @title Multiple imputation of missing values in longitudinal data
-#' @description Function produces multiple imputations for missing data
-#'  via methods available for the "mice" package.
-#' @param long_data The incomplete dataset in which to impute student
-#'  (scale score) values.
-#' @param return.all.data Return all records from the long data used to
-#'  create the imputed scale scores? If TRUE, only records from the current
-#'  year are returned.
-#'  Default: TRUE
-#' @param plot.dir Directory path for diagnostic plots to be placed. Default is
-#'  the working directory. Additional subdirectories are created internally as needed.
-#'  Default: 'Missing_Data'
-#' @param growth.config An elongated `SGP` style config script with an entry for
-#'  each grade/content_area/year cohort definition. Configs will be used to subset
-#'  the `long_data` provided as required for cohort level data imputation.
-#'  Default: NULL
-#' @param status.config An elongated `SGP` style config script with an entry for
-#'  each grade/content_area/year cohort definition. Configs will be used to subset
-#'  the `long_data` provided as required for cohort level data imputation. Unlike
-#'  a `growth.config` entry, `status.config` entries use data from the same grade,
-#'  but from the prior year(s) (i.e. not individual variables). For example you
-#'  might impute missing 3rd grade ELA scores based on a previous year's 3rd grade
-#'  school mean scale score, FRL status, etc.
-#'  Default: NULL
-#' @param focus.variable The variable to be imputed. Currently only a single
-#'  variable is allowed. Default: `SCALE_SCORE`
-#' @param student.factors Demographic or other student level background information
-#'  that will be used in the imputation calculations. The default (NULL) means
-#'  that no additional student level factors (beyond observed values of the
-#'  specified `focus.variable` - i.e., `SCALE_SCORE`) are included.
-#'  Default: NULL
-#' @param group Grouping indicator (e.g. institution ID) used to construct group
-#'  level means of the `focus.variable` and any `student.factors` provided.
-#'  Default: NULL
-#' @param impute.long Some imputation methods (e.g., "2l.pan") can be used to
-#'  impute the data in a longitudinal form (clustered by student over time/grade),
-#'  in which case this argument should be set to TRUE. Defaults to FALSE, meaning
-#'  scores are imputed in a "wide", or cross-sectional format.
-#'  Default: FALSE
-#' @param impute.method The name of the method from the `mice` package or other
-#'  add-on package functions used to impute the `focus.variable`. The default is
-#'  `NULL`, which translates to the default method in the `mice` package - "pmm"
-#'  for predictive mean matching. The only other tested method is currently the
-#'  `panImpute` functionality from the `mice` and `mitml` packages.
-#'  Default: NULL
-#' @param parallel.config The default is NULL meaning imputations will be calculated
-#'  sequentially in a call to `mice::mice`. Alternatively, a list with named elements
-#'  cores, packages and/or cluster.type can be provided. The "cores" element should
-#'  be a single numeric value for the number of CPU cores/hyperthreads to use. The
-#'  "packages" element is a character string of package name(s) for the requested
-#'  imputation methods. "cluster.type" specifies the parallel backend to use (typically
-#'  FORK for Linux/Unix/Mac and "PSOCK" for Windows). An example list might look
-#'  like: `list(packages = c('mice', 'miceadds'), cores=10)`.
-#'  Default: NULL
-#' @param seed A random seed set for the imputation process to allow for
-#'  replication of results, or for alternative results using the same code.
-#'  Default: 4224
-#' @param M The number of imputed values to compute.
-#'  Default: 15
-#' @param maxit The number of iterations allowed for each imputation process.
-#'  See the `mice` package documentation for details.
-#'  Default: 30
-#' @param verbose Defaults to FALSE, meaning progress information from the
-#'  `mice` package is not printed out to the console.
-#'  Default: FALSE
-#' @param ... Additional arguments for the `mice::mice` function and any particular
-#'  imputation method/function. See each function/package documentation for details.
-#' @return Function returns `long_data` with additional columns of imputed values.
-#' @details The function returns the dataset supplied to the `long_data` argument
-#'  along with `M` additional columns populated with the imputed values.
+#' @title FUNCTION_TITLE
+#' @description FUNCTION_DESCRIPTION
+#' @param long_data PARAM_DESCRIPTION
+#' @param return.all.data PARAM_DESCRIPTION, Default: TRUE
+#' @param plot.dir PARAM_DESCRIPTION, Default: 'Missing_Data'
+#' @param status.config PARAM_DESCRIPTION, Default: NULL
+#' @param growth.config PARAM_DESCRIPTION, Default: NULL
+#' @param focus.variable PARAM_DESCRIPTION, Default: 'SCALE_SCORE'
+#' @param student.factors PARAM_DESCRIPTION, Default: NULL
+#' @param group PARAM_DESCRIPTION, Default: NULL
+#' @param impute.long PARAM_DESCRIPTION, Default: FALSE
+#' @param impute.method PARAM_DESCRIPTION, Default: NULL
+#' @param parallel.config PARAM_DESCRIPTION, Default: NULL
+#' @param seed PARAM_DESCRIPTION, Default: 4224
+#' @param M PARAM_DESCRIPTION, Default: 15
+#' @param maxit PARAM_DESCRIPTION, Default: 30
+#' @param verbose PARAM_DESCRIPTION, Default: FALSE
+#' @param ... PARAM_DESCRIPTION
+#' @return OUTPUT_DESCRIPTION
+#' @details DETAILS
 #' @examples 
-#' 	\dontrun{
-#'     data_to_impute <- SGPdata::sgpData_LONG_COVID
-#'
-#'     ###   Read in STEP 0 SGP configuration scripts
-#'     source("SGP_CONFIG/STEP_0/Ampute_2021/Growth.R")
-#'     source("SGP_CONFIG/STEP_0/Ampute_2021/Status.R")
-#'     Test_Data_LONG <-
-#'         imputeScaleScore(
-#'             long_data = data_to_impute,
-#'             growth.config = growth_config_2021,
-#'             status.config = status_config_2021,
-#'             M = 1)
+#' \dontrun{
+#' if(interactive()){
+#'  #EXAMPLE1
 #'  }
+#' }
 #' @seealso 
-#'  \code{\link[mice]{mice}}, \code{\link[mitml]{panImpute}}
+#'  \code{\link[parallel]{detectCores}}, \code{\link[parallel]{makeCluster}}, \code{\link[parallel]{RNGstreams}}, \code{\link[parallel]{clusterApply}}
+#'  \code{\link[data.table]{J}}, \code{\link[data.table]{setattr}}, \code{\link[data.table]{setkey}}, \code{\link[data.table]{dcast.data.table}}, \code{\link[data.table]{melt.data.table}}, \code{\link[data.table]{as.data.table}}, \code{\link[data.table]{rbindlist}}
+#'  \code{\link[utils]{head}}
+#'  \code{\link[stats]{formula}}, \code{\link[stats]{setNames}}
+#'  \code{\link[mice]{make.blocks}}, \code{\link[mice]{make.predictorMatrix}}, \code{\link[mice]{mice}}, \code{\link[mice]{ibind}}, \code{\link[mice]{densityplot.mids}}, \code{\link[mice]{complete.mids}}
+#'  \code{\link[callr]{r}}
+#'  \code{\link[grDevices]{pdf}}, \code{\link[grDevices]{dev}}
+#'  \code{\link[graphics]{plot.default}}
 #' @rdname imputeLongData
 #' @export 
-#' @author Adam R. VanIwaarden \email{avaniwaarden@nciea.org}
-#' @keywords misc
-#' @keywords models
-#' @importFrom parallel detectCores
-#' @importFrom data.table SJ setnames setkey setkeyv dcast melt data.table rbindlist as.data.table key
-#' @importFrom stats setNames
-#' @importFrom mice make.blocks make.predictorMatrix mice densityplot complete
-
+#' @importFrom parallel detectCores makeCluster clusterSetRNGStream clusterExport clusterEvalQ parSapply stopCluster
+#' @importFrom data.table SJ setnames setkey setkeyv dcast melt setattr as.data.table key rbindlist
+#' @importFrom utils tail head
+#' @importFrom stats as.formula setNames
+#' @importFrom mice make.blocks make.predictorMatrix mice ibind densityplot complete
+#' @importFrom callr r
+#' @importFrom grDevices pdf dev.off
+#' @importFrom graphics plot
 imputeLongData =
   function(
     long_data,
@@ -598,6 +547,10 @@ imputeLongData =
         tmp.fmla <- list()
         if (length(group)) {
           for (gv in group.vars) {
+            if (!any(is.na(wide_data[[gv]]))) {
+              tmp.meth[[gv]] <- ""
+              next
+            }
             tmp.grd.subj <- sub(".+?[.]", "", gv)
             tmp.imp.var <- paste0(focus.variable, ".", tmp.grd.subj)
             tmp.rhs <- 
@@ -703,40 +656,119 @@ imputeLongData =
       tmp.pred[focus.variable, "GRADE"] <- 2 # random effect for GRADE (time)
     }
 
-    switch(parexecute,
-      SEQ = imp <-
-        suppressWarnings(
-          mice::mice(
-            data = wide_data, # where = tmp.where, ignore = tmp.ign, # can't use `where` or `ignore` with panImpute
-            m = M, method = tmp.meth,
-            visitSequence = c(group.vars, focus.vars),
-            blocks = tmp.blok, formulas = tmp.fmla,
-            maxit = maxit, seed = seed, print = verbose,
-            ...
-        )),
-      PAR = imp <-
-        suppressWarnings(
-          parMICE(
-            data = wide_data, m = M, maxit = maxit, meth = tmp.meth,
-            bloks = tmp.blok, frmlas = tmp.fmla,
-            visit = c(group.vars, focus.vars),
-            seed = seed, nnodes = parallel.config$cores,
-            cluster.type = parallel.config$cluster.type,
-            packages = parallel.config$packages
-        ))
-      )
+    if (parexecute == "SEQ") {
+        imp <-
+          suppressWarnings(
+            mice::mice(
+              data = wide_data,
+              m = M, method = tmp.meth,
+              visitSequence = c(group.vars, focus.vars),
+              blocks = tmp.blok, formulas = tmp.fmla,
+              maxit = maxit, seed = seed, print = verbose,
+              ...
+              # where = tmp.where, ignore = tmp.ign,
+              # can't use `where` or `ignore` with panImpute
+          ))
+        res <- NULL
+    } else {
+        ##  Add required data/objects to `imp_data` and save to tempdir()
 
-    # imp <- mice::futuremice(
-    #    data = wide_data,
-    #    parallelseed = seed,
-    #    n.core = parallel.config$cores,
-    #    use.logical = TRUE,
-    #    future.plan = "multicore", # "multisession", parallel.config$cluster.type
-    #    m = M, maxit = maxit, meth = tmp.meth,
-    #    visitSequence = c(group.vars, focus.vars),
-    #    blocks = tmp.blok, formulas = tmp.fmla,
-    #    print = verbose, type = NULL, ...
-    #  )
+        td <- tempdir()
+        dput(td, file = "tdir")
+
+        obj.list <- c(
+          "seed", "M", "parallel.config", "group.vars", "focus.vars",
+          "maxit", "tmp.meth", "tmp.blok", "tmp.fmla"
+        )
+        new.nms <-
+          c("s", "mm", "pconf", "grpV", "focV", "mxt", "mth", "blk", "fml")
+        
+        for (o in seq(obj.list)) {
+          data.table::setattr(wide_data, new.nms[o], get(obj.list[o]))
+        }
+        data.table::setattr(wide_data, "row.names", NULL)
+        saveRDS(wide_data, file = file.path(td, "imp_dat.rds"), compress = FALSE)
+
+        imp <-
+          callr::r(
+            \() {
+              wdx <- getwd()
+              setwd(dget("tdir"))
+
+            ##  Get exported objects from `imp_data` attributes
+              imp_data <- readRDS("imp_dat.rds")
+              imp.obj <-
+                  c("s", "mm", "pconf", "grpV", "focV",
+                   "mxt", "mth", "blk", "fml")
+              for (o in imp.obj) assign(o, attributes(imp_data)[[o]])
+            ##  Make/set up cluster
+              tmp.cl <-
+                parallel::makeCluster(
+                  spec = pconf$cores,
+                  type = pconf$cluster.type
+                )
+              parallel::clusterSetRNGStream(cl = tmp.cl, iseed = s)
+
+              pkg.list <- paste0("require(", pconf$packages, ")", collapse = ";")
+              parallel::clusterExport(
+                  cl = tmp.cl,
+                  varlist = list("pkg.list"),
+                  envir = environment()
+              )
+
+              if (pconf$cluster.type != "FORK") {
+                  parallel::clusterExport(
+                      cl = tmp.cl,
+                      varlist = list(
+                          "mxt",
+                          "mth",
+                          "blk",
+                          "fml",
+                          "focV",
+                          "grpV",
+                          "imp_data"
+                      ),
+                      envir = environment()
+                  )
+              }
+
+              parallel::clusterEvalQ(
+                  cl = tmp.cl,
+                  expr = eval(parse(text = pkg.list))
+              )
+
+              res <-
+                  parallel::parSapply(
+                      cl = tmp.cl,
+                      X = 1:mm,
+                      FUN =
+                          \(f) {
+                          res.mice <-
+                              mice::mice(
+                                  data = imp_data,
+                                  m = 1,
+                                  maxit = mxt,
+                                  method = mth,
+                                  visitSequence = c(grpV, focV),
+                                  blocks = blk,
+                                  formulas = fml
+                              )
+                          },
+                      simplify = FALSE
+                  )
+
+              parallel::stopCluster(cl = tmp.cl)
+
+              res.out <- res[[1]]
+              imp <- res[[1]]
+              for (i in 2:mm) res.out <- mice::ibind(res.out, res[[i]])
+
+              setwd(wdx)
+              return(res.out)
+          }
+        )
+      frm.tf <- file.remove("tdir")
+    }
 
     ##  Save some diagnostic plots
     if (cohort.iter$analysis.type == "GROWTH") {
@@ -817,6 +849,20 @@ imputeLongData =
         ][,
           YEAR := current.year
         ]
+        if (!is.null(group)) {
+          no_group <-
+            wide_imputed[is.na(get(gv)), .(ID, GRADE, CONTENT_AREA)][,
+              NA_GrpVar_IMP := TRUE
+            ]
+          setkey(no_group, ID, GRADE, CONTENT_AREA)
+          setkey(wide_imputed, ID, GRADE, CONTENT_AREA)
+          wide_imputed <- no_group[wide_imputed]
+          wide_imputed[
+            NA_GrpVar_IMP == TRUE, eval(gv) := NA
+          ][,
+            NA_GrpVar_IMP := NULL
+          ]
+        }
       } else {
         wide_imputed[, GRADE := gsub(paste0(focus.variable, "."), "", GRADE)]
         unq.ca <- unique(cohort.iter[["content.areas"]])
