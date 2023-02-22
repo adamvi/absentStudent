@@ -123,6 +123,7 @@ imputeLongData =
 
   for (K in seq(configs)) {
     cohort.iter <- configs[[K]]
+    names(cohort.iter) <- gsub("^sgp[.]", "", names(cohort.iter))
     grade.length <- length(cohort.iter[["grade.sequences"]])
 
     cohort.lookup <-
@@ -657,43 +658,97 @@ imputeLongData =
     }
 
     if (parexecute == "SEQ") {
-        imp <-
-          suppressWarnings(
-            mice::mice(
-              data = wide_data,
-              m = M, method = tmp.meth,
-              visitSequence = c(group.vars, focus.vars),
-              blocks = tmp.blok, formulas = tmp.fmla,
-              maxit = maxit, seed = seed, print = verbose,
-              ...
-              # where = tmp.where, ignore = tmp.ign,
-              # can't use `where` or `ignore` with panImpute
-          ))
-        res <- NULL
+      imp <-
+        suppressWarnings(
+          mice::mice(
+            data = wide_data,
+            m = M, method = tmp.meth,
+            visitSequence = c(group.vars, focus.vars),
+            blocks = tmp.blok, formulas = tmp.fmla,
+            maxit = maxit, seed = seed, print = verbose,
+            ...
+            # where = tmp.where, ignore = tmp.ign,
+            # can't use `where` or `ignore` with panImpute
+        ))
+      res <- NULL
     } else {
-        ##  Add required data/objects to `imp_data` and save to tempdir()
+      ##  Add required data/objects to `imp_data` and save to tempdir()
 
-        td <- tempdir()
-        dput(td, file = "tdir")
+      td <- tempdir()
+      dput(td, file = "tdir")
 
-        obj.list <- c(
-          "seed", "M", "parallel.config", "group.vars", "focus.vars",
-          "maxit", "tmp.meth", "tmp.blok", "tmp.fmla"
-        )
-        new.nms <-
-          c("s", "mm", "pconf", "grpV", "focV", "mxt", "mth", "blk", "fml")
-        
-        for (o in seq(obj.list)) {
-          data.table::setattr(wide_data, new.nms[o], get(obj.list[o]))
+      obj.list <- c(
+        "seed", "M", "parallel.config", "group.vars", "focus.vars",
+        "maxit", "tmp.meth", "tmp.blok", "tmp.fmla"
+      )
+      new.nms <-
+        c("s", "mm", "pconf", "grpV", "focV", "mxt", "mth", "blk", "fml")
+      
+      for (o in seq(obj.list)) {
+        data.table::setattr(wide_data, new.nms[o], get(obj.list[o]))
+      }
+      data.table::setattr(wide_data, "row.names", NULL)
+      saveRDS(wide_data, file = file.path(td, "imp_data.rds"), compress = FALSE)
+
+      if (parallel.config$cluster.type == "FORK") {
+        imp.tf <-
+          callr::r(
+            \() {
+                wdx <- getwd()
+                tdir <- dget("tdir")
+                setwd(tdir)
+
+                imp_data <- readRDS("imp_data.rds")
+                imp.obj <-
+                    c("s", "mm", "pconf", "grpV", "focV",
+                    "mxt", "mth", "blk", "fml")
+                for (o in imp.obj) assign(o, attributes(imp_data)[[o]])
+
+                set.seed(s, "L'Ecuyer")
+
+                parallel::mclapply(
+                    X = 1:mm,
+                    FUN =
+                      \(f) {
+                        res <- 
+                          mice::mice(
+                              data = imp_data,
+                              m = 1,
+                              maxit = mxt,
+                              method = mth,
+                              visitSequence = c(grpV, focV),
+                              blocks = blk,
+                              formulas = fml
+                          )
+                        saveRDS(
+                            res,
+                            file = paste0("res_", f, ".rds"),
+                            compress = FALSE
+                        )
+                        res <- NULL
+                      },
+                    mc.cores = pconf$cores,
+                    mc.preschedule =
+                      ifelse(
+                        is.null(pconf$preschedule),
+                        TRUE, pconf$preschedule
+                      )
+                )
+                return(TRUE)
+            }
+          )
+        imp <- readRDS(file.path(td, "res_1.rds"))
+        for (i in 2:M) {
+          imp <-
+            mice::ibind(imp, readRDS(file.path(td,paste0("res_", i, ".rds"))))
         }
-        data.table::setattr(wide_data, "row.names", NULL)
-        saveRDS(wide_data, file = file.path(td, "imp_dat.rds"), compress = FALSE)
-
+      } else {
         imp <-
           callr::r(
             \() {
               wdx <- getwd()
-              setwd(dget("tdir"))
+              tdir <- dget("tdir")
+              setwd(tdir)
 
             ##  Get exported objects from `imp_data` attributes
               imp_data <- readRDS("imp_dat.rds")
@@ -760,14 +815,13 @@ imputeLongData =
               parallel::stopCluster(cl = tmp.cl)
 
               res.out <- res[[1]]
-              imp <- res[[1]]
               for (i in 2:mm) res.out <- mice::ibind(res.out, res[[i]])
 
-              setwd(wdx)
               return(res.out)
+              return(TRUE)
           }
         )
-      frm.tf <- file.remove("tdir")
+      }
     }
 
     ##  Save some diagnostic plots
@@ -823,23 +877,21 @@ imputeLongData =
 
     ###  Format and store results
     if (!impute.long || cohort.iter$analysis.type == "STATUS") {
-      long_imputed <-
-        data.table::as.data.table(
-          mice::complete(imp, action = "long", include = TRUE)
-        )
       if (cohort.iter$analysis.type == "STATUS") {
         long.ids <- c("ID", ".imp", gv)
       } else {
         long.ids <- c("ID", ".imp")
       }
       wide_imputed <-
-        data.table::melt(
-          data = long_imputed,
-          id.vars = long.ids,
-          value.name = focus.variable,
-          variable.name = "GRADE",
-          measure.vars = focus.vars
-        )
+        data.table::as.data.table(
+          mice::complete(imp, action = "long", include = TRUE)
+        ) |>
+          data.table::melt(
+            id.vars = long.ids,
+            value.name = focus.variable,
+            variable.name = "GRADE",
+            measure.vars = focus.vars
+          )
 
       if (cohort.iter$analysis.type == "STATUS") {
         wide_imputed[,
@@ -885,7 +937,7 @@ imputeLongData =
             ))
         ]
       }
-        
+
       wide_imputed <-
         data.table::dcast(
           data = wide_imputed,
@@ -902,7 +954,7 @@ imputeLongData =
         setkeyv(wide_imputed, rekey)
       }
     } else {
-      long_imputed <-
+      wide_imputed <-
         data.table::as.data.table(
           mice::complete(imp, action = "long", include = TRUE)
         )[,
@@ -912,7 +964,7 @@ imputeLongData =
 
       wide_imputed <-
         data.table::dcast(
-          data = long_imputed[GRADE == current.grade, ],
+          data = wide_imputed[GRADE == current.grade, ],
           formula = ID ~ .imp,
           value.var = focus.variable
         )

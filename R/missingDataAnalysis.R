@@ -104,6 +104,7 @@ missingDataAnalysis =
 
   for (K in seq(configs)) {
     cohort.iter <- res.list[[K]][["config"]] <- configs[[K]]
+    names(cohort.iter) <- gsub("^sgp[.]", "", names(cohort.iter))
 
     prior.years <- utils::head(unique(cohort.iter[["panel.years"]]), -1)
     current.year <- utils::tail(unique(cohort.iter[["panel.years"]]), 1)

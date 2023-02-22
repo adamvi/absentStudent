@@ -170,6 +170,7 @@ amputeLongData =
 
     for (K in seq(configs)) {
       cohort.iter <- configs[[K]]
+      names(cohort.iter) <- gsub("^sgp[.]", "", names(cohort.iter))
       grade.length <- length(cohort.iter[["grade.sequences"]])
 
       cohort.lookup <-
