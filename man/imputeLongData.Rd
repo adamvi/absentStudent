@@ -73,7 +73,7 @@ if(interactive()){
 }
 }
 \seealso{
-\code{\link[parallel]{detectCores}}, \code{\link[parallel]{makeCluster}}, \code{\link[parallel]{RNGstreams}}, \code{\link[parallel]{clusterApply}}
+\code{\link[parallel]{detectCores}}, \code{\link[parallel]{mclapply}}, \code{\link[parallel]{makeCluster}}, \code{\link[parallel]{RNGstreams}}, \code{\link[parallel]{clusterApply}}
  \code{\link[data.table]{J}}, \code{\link[data.table]{setattr}}, \code{\link[data.table]{setkey}}, \code{\link[data.table]{dcast.data.table}}, \code{\link[data.table]{melt.data.table}}, \code{\link[data.table]{as.data.table}}, \code{\link[data.table]{rbindlist}}
  \code{\link[utils]{head}}
  \code{\link[stats]{formula}}, \code{\link[stats]{setNames}}

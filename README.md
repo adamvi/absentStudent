@@ -2,7 +2,7 @@ absentStudent
 ===========
 
 [![R-CMD-check](https://github.com/CenterForAssessment/absentStudent/workflows/R-CMD-check/badge.svg)](https://github.com/CenterForAssessment/absentStudent/actions)
-[![Development Version](https://img.shields.io/badge/devel-0.0--0.4-brightgreen.svg)](https://github.com/CenterForAssessment/absentStudent)
+[![Development Version](https://img.shields.io/badge/devel-0.0--0.5-brightgreen.svg)](https://github.com/CenterForAssessment/absentStudent)
 [![License](http://img.shields.io/badge/license-GPL%203-brightgreen.svg?style=flat)](https://github.com/CenterForAssessment/absentStudent/blob/master/LICENSE.md)
 
 

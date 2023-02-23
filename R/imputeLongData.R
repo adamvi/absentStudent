@@ -25,7 +25,7 @@
 #'  }
 #' }
 #' @seealso 
-#'  \code{\link[parallel]{detectCores}}, \code{\link[parallel]{makeCluster}}, \code{\link[parallel]{RNGstreams}}, \code{\link[parallel]{clusterApply}}
+#'  \code{\link[parallel]{detectCores}}, \code{\link[parallel]{mclapply}}, \code{\link[parallel]{makeCluster}}, \code{\link[parallel]{RNGstreams}}, \code{\link[parallel]{clusterApply}}
 #'  \code{\link[data.table]{J}}, \code{\link[data.table]{setattr}}, \code{\link[data.table]{setkey}}, \code{\link[data.table]{dcast.data.table}}, \code{\link[data.table]{melt.data.table}}, \code{\link[data.table]{as.data.table}}, \code{\link[data.table]{rbindlist}}
 #'  \code{\link[utils]{head}}
 #'  \code{\link[stats]{formula}}, \code{\link[stats]{setNames}}
@@ -35,7 +35,7 @@
 #'  \code{\link[graphics]{plot.default}}
 #' @rdname imputeLongData
 #' @export 
-#' @importFrom parallel detectCores makeCluster clusterSetRNGStream clusterExport clusterEvalQ parSapply stopCluster
+#' @importFrom parallel detectCores mclapply makeCluster clusterSetRNGStream clusterExport clusterEvalQ parSapply stopCluster
 #' @importFrom data.table SJ setnames setkey setkeyv dcast melt setattr as.data.table key rbindlist
 #' @importFrom utils tail head
 #' @importFrom stats as.formula setNames
@@ -139,10 +139,6 @@ imputeLongData =
 
     data.table::setkeyv(long_data, getKey(long_data))
 
-    tmp_long <-
-      long_data[cohort.lookup][,
-        c(getKey(long_data), long.to.wide.vars), with = FALSE]
-
     prior.years <- utils::head(unique(cohort.iter[["panel.years"]]), -1)
     current.year <- utils::tail(unique(cohort.iter[["panel.years"]]), 1)
     current.grade <- utils::tail(unique(cohort.iter[["grade.sequences"]]), 1)
@@ -152,7 +148,11 @@ imputeLongData =
       ###  convert long to wide
       wide_data <-
         data.table::dcast(
-          data = tmp_long,
+          data =
+            long_data[cohort.lookup][,
+              c(getKey(long_data), long.to.wide.vars),
+              with = FALSE
+            ],
           formula = ID ~ GRADE + CONTENT_AREA,
           sep = ".", drop = FALSE,
           value.var = c("VALID_CASE", long.to.wide.vars)
@@ -190,10 +190,13 @@ imputeLongData =
         )
       names(meas.list) <- long.to.wide.vars
 
-      long_final <- data.table::melt(data = wide_data,
-                                     id.vars = "ID",
-                                     variable.name = "GRADE",
-                                     measure.vars = meas.list)
+      long_final <-
+        data.table::melt(
+          data = wide_data,
+          id.vars = "ID",
+          variable.name = "GRADE",
+          measure.vars = meas.list
+        )
       long_final[,
         CONTENT_AREA :=
           as.character(factor(GRADE, labels = cohort.lookup[["CONTENT_AREA"]]))
@@ -251,18 +254,22 @@ imputeLongData =
       long_final[, VALID_CASE := "VALID_CASE"]
 
     } else {  #  END "GROWTH"  --  Begin "STATUS"
-      ##  Create wide_data and tmp_long_priors
+      ##  Create `wide_data` and group level summary (`group_smry`)
       status.lookup <- cohort.lookup[YEAR == current.year]
-      data.table::setkeyv(tmp_long, getKey(tmp_long))
 
       wide.fmla <-
         stats::as.formula(
           paste("ID", ifelse(is.null(group), "", paste("+", group)),
                 "~ GRADE + CONTENT_AREA"
           ))
+
       wide_data <-
         data.table::dcast(
-          data = tmp_long[status.lookup],
+          data =
+            long_data[status.lookup][,
+              c(getKey(long_data), long.to.wide.vars),
+              with = FALSE
+            ],
           formula = wide.fmla,
           sep = ".", drop = FALSE,
           value.var = c(focus.variable, student.factors)
@@ -270,8 +277,9 @@ imputeLongData =
 
       if (!is.null(group)) {
         group.lookup <-
-          unique(tmp_long[status.lookup, c("ID", group), with = FALSE])
-        wide_data <- wide_data[group.lookup]
+          unique(long_data[status.lookup, c("ID", group), with = FALSE])
+        wide_data <- # !duplicated(...) below takes 1st entry for kids in multiple schools
+          wide_data[group.lookup[!duplicated(group.lookup, by = "ID")]]
       }
 
       if (length(student.factors)) {
@@ -306,11 +314,7 @@ imputeLongData =
       if (length(group)) {
         group.vars <- paste0(group, ".", current.grade)
         priors.lookup <- cohort.lookup[YEAR != current.year]
-        tmp_long_priors <-
-          tmp_long[priors.lookup][,
-            c("YEAR", "CONTENT_AREA", "GRADE", focus.variable, group),
-            with = FALSE
-          ]
+          
         ##  Prior grade(s) summaries to use
         smry.eval.expression <-
           paste0("PRIOR_IMV__", focus.variable,
@@ -321,26 +325,27 @@ imputeLongData =
             sub("^(.*) = .*", "\\1", smry.eval.expression)
           )
 
-        tmp_grp_smry <-
-          tmp_long_priors[
+        group_smry <-
+          long_data[priors.lookup][,
+              c("YEAR", "CONTENT_AREA", "GRADE", focus.variable, group),
+              with = FALSE
+          ][
             !is.na(get(group)),
               lapply(smry.eval.expression, \(f) eval(parse(text = f))),
             keyby = c("GRADE", "CONTENT_AREA", group)
-          ]
+          ] |>
+            data.table::dcast(
+              formula = get(group) ~ GRADE + CONTENT_AREA,
+              sep = ".",
+              value.var = names(smry.eval.expression)
+            )
 
-        tmp_grp_smry <-
-          data.table::dcast(
-            data = tmp_grp_smry,
-            formula = get(group) ~ GRADE + CONTENT_AREA,
-            sep = ".",
-            value.var = names(smry.eval.expression)
-          )
         data.table::setnames(
-          tmp_grp_smry,
-          c(group, paste0(names(smry.eval.expression), ".", names(tmp_grp_smry)[-1]))
+          group_smry,
+          c(group, paste0(names(smry.eval.expression), ".", names(group_smry)[-1]))
         )
 
-        wide_data <- merge(wide_data, tmp_grp_smry, by = group, all.x = TRUE)
+        wide_data <- merge(wide_data, group_smry, by = group, all.x = TRUE)
         data.table::setnames(wide_data, group, group.vars)
 
         ##  Put in cross school mean for schools with no students in prior years
@@ -399,11 +404,6 @@ imputeLongData =
 
         data.table::setkeyv(long_data, getKey(long_data))
 
-        tmp_long_priors <-
-          long_data[priors.lookup][,
-            c("YEAR", "CONTENT_AREA", "GRADE", focus.variable, group),
-            with = FALSE
-          ]
         ##  Prior grade(s) summaries to use
         smry.eval.expression <-
           paste0("PRIOR_IMV__", focus.variable,
@@ -414,29 +414,29 @@ imputeLongData =
             sub("^(.*) = .*", "\\1", smry.eval.expression)
           )
 
-        tmp_grp_smry <-
-          tmp_long_priors[
+        group_smry <-
+          long_data[priors.lookup][,
+            c("YEAR", "CONTENT_AREA", "GRADE", focus.variable, group),
+            with = FALSE
+          ][
             !is.na(get(group)),
               lapply(smry.eval.expression, \(f) eval(parse(text = f))),
-            keyby = c("GRADE", "CONTENT_AREA", group) # "YEAR", 
-          ]
+            keyby = c("GRADE", "CONTENT_AREA", group)
+          ] |>
+            data.table::dcast(
+              formula = get(group) ~ GRADE + CONTENT_AREA,
+              sep = ".",
+              value.var = names(smry.eval.expression)
+            )
 
-        tmp_grp_smry <-
-          data.table::dcast(
-            data = tmp_grp_smry,
-            formula = get(group) ~ GRADE + CONTENT_AREA, # YEAR + 
-            sep = ".",
-            value.var = names(smry.eval.expression)
-          )
-
-        tmp.grd.subj <- names(tmp_grp_smry)[-1]
+        tmp.grd.subj <- names(group_smry)[-1]
         ##  Put in cross school mean for schools with no students in prior years
         for (prior.smry in tmp.grd.subj) {
           smry_names <-
             c(group, paste0("PRIOR_IMV__", focus.variable)) |>
               paste(prior.smry, sep = ".")
           if (!smry_names[1] %in% names(wide_data)) next
-          sub_grp_smry <- tmp_grp_smry[, c("group", prior.smry), with = FALSE]
+          sub_grp_smry <- group_smry[, c("group", prior.smry), with = FALSE]
           setnames(sub_grp_smry, smry_names)
 
           wide_data <-
@@ -822,6 +822,7 @@ imputeLongData =
           }
         )
       }
+      frm.tf <- file.remove("tdir")
     }
 
     ##  Save some diagnostic plots

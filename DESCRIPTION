@@ -1,12 +1,12 @@
 Package: absentStudent
-Version: 0.0-0.4
+Version: 0.0-0.5
 Date: 2023-2-9
 Title: Tools and wrapper functions for describing, analyzing and remediating missing student records in longitudinal data sets.
 Authors@R: c(person(given=c("Adam", "R."), family="VanIwaarden", email="avaniwaarden@nciea.org", role=c("aut", "cre")))
 Maintainer: Adam VanIwaarden <avaniwaarden@nciea.org>
 Depends: R (>= 4.1)
 Suggests: knitr, rmarkdown, mitml
-Imports: abind, crayon, data.table, dplyr, finalfit, fixest, ggplot2, graphics, grDevices, mice, naniar, parallel, pROC, stats, svglite, tools, utils, VIM
+Imports: callr, crayon, data.table, dplyr, finalfit, fixest, ggplot2, graphics, grDevices, mice, naniar, parallel, pROC, stats, svglite, tools, utils, VIM
 URL: https://CenterForAssessment.github.io/absentStudent
 BugReports: https://github.com/CenterForAssessment/absentStudent/issues
 VignetteBuilder: knitr
