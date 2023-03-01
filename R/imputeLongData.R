@@ -1,46 +1,109 @@
-#' @title FUNCTION_TITLE
-#' @description FUNCTION_DESCRIPTION
-#' @param long_data PARAM_DESCRIPTION
-#' @param return.all.data PARAM_DESCRIPTION, Default: TRUE
-#' @param plot.dir PARAM_DESCRIPTION, Default: 'Missing_Data'
-#' @param status.config PARAM_DESCRIPTION, Default: NULL
-#' @param growth.config PARAM_DESCRIPTION, Default: NULL
-#' @param focus.variable PARAM_DESCRIPTION, Default: 'SCALE_SCORE'
-#' @param focus.years PARAM_DESCRIPTION, Default: FALSE
-#' @param student.factors PARAM_DESCRIPTION, Default: NULL
-#' @param group PARAM_DESCRIPTION, Default: NULL
-#' @param impute.method PARAM_DESCRIPTION, Default: NULL
-#' @param formula.specs PARAM_DESCRIPTION, Default: FALSE
-#' @param parallel.config PARAM_DESCRIPTION, Default: NULL
-#' @param seed PARAM_DESCRIPTION, Default: 4224
-#' @param M PARAM_DESCRIPTION, Default: 15
-#' @param maxit PARAM_DESCRIPTION, Default: 30
-#' @param verbose PARAM_DESCRIPTION, Default: FALSE
-#' @param ... PARAM_DESCRIPTION
-#' @return OUTPUT_DESCRIPTION
-#' @details DETAILS
-#' @examples
-#' \dontrun{
-#' if(interactive()){
-#'  #EXAMPLE1
+#' @title Multiple imputation of missing values in longitudinal data
+#' @description Function produces multiple imputations for missing data
+#'  via methods available for the "mice" package.
+#' @param long_data The incomplete dataset in which to impute student
+#'  (scale score) values.
+#' @param return.all.data Return all records from the long data used to
+#'  create the imputed scale scores? If TRUE, only records from the current
+#'  year are returned.
+#'  Default: TRUE
+#' @param plot.dir Directory path for diagnostic plots to be placed. Default is
+#'  the working directory. Additional subdirectories are created internally as needed.
+#'  Default: 'Missing_Data'
+#' @param status.config An elongated `SGP` style config script with an entry for
+#'  each grade/content_area/year cohort definition. Configs will be used to subset
+#'  the `long_data` provided as required for cohort level data imputation. Unlike
+#'  a `growth.config` entry, `status.config` entries use data from the same grade,
+#'  but from the prior year(s) (i.e. not individual variables). For example you
+#'  might impute missing 3rd grade ELA scores based on a previous year's 3rd grade
+#'  school mean scale score, FRL status, etc.
+#'  Default: NULL
+#' @param growth.config An elongated `SGP` style config script with an entry for
+#'  each grade/content_area/year cohort definition. Configs will be used to subset
+#'  the `long_data` provided as required for cohort level data imputation.
+#'  Default: NULL
+#' @param focus.variable The variable to be imputed. Currently only a single
+#'  variable is allowed. Default: `SCALE_SCORE`
+#' @param focus.years Values of YEAR that should use the `impute.method`.
+#'  If provided, `focus.variable` values missing in any excluded year(s) will be
+#'  imputed using the (typically faster) `pmm` method.
+#'  Default: NULL
+#' @param student.factors Demographic or other student level background information
+#'  that will be used in the imputation calculations. The default (NULL) means
+#'  that no additional student level factors (beyond observed values of the
+#'  specified `focus.variable` - i.e., `SCALE_SCORE`) are included.
+#'  Default: NULL
+#' @param group Grouping indicator (e.g. institution ID) used to construct group
+#'  level means of the `focus.variable` and any `student.factors` provided.
+#'  Default: NULL
+#' @param impute.method The name of the method from the `mice` package or other
+#'  add-on package functions used to impute the `focus.variable`. The default is
+#'  `NULL`, which translates to the default method in the `mice` package - "pmm"
+#'  for predictive mean matching. The only other tested method is currently the
+#'  `panImpute` functionality from the `mice` and `mitml` packages.
+#'  Default: NULL
+#' @param formula.specs Imputation uses the the `formula` argument (and therefore
+#'  only those imputation methods that use this argument can be used). This function
+#'  determines those formula's dependent upon the supplied configs and data. This
+#'  argument allows for the modification (simpler/more complex, whether to include
+#'  values of the `focus.variable` formula as random slopes where applicable with
+#'  `group`, etc.).
+#'  Default: list(simple = TRUE, random.slope = FALSE)
+#' @param parallel.config The default is NULL meaning imputations will be calculated
+#'  sequentially in a call to `mice::mice`. Alternatively, a list with named elements
+#'  cores, packages and/or cluster.type can be provided. The "cores" element should
+#'  be a single numeric value for the number of CPU cores/hyperthreads to use. The
+#'  "packages" element is a character string of package name(s) for the requested
+#'  imputation methods. "cluster.type" specifies the parallel backend to use
+#'  (typically FORK for Linux/Unix/Mac and "PSOCK" for Windows). An example list
+#'  might look like: `list(packages = c('mice', 'miceadds'), cores=10)`.
+#'  Default: NULL
+#' @param seed A random seed set for the imputation process to allow for
+#'  replication of results, or for alternative results using the same code.
+#'  Default: 4224
+#' @param M The number of imputed values to compute.
+#'  Default: 15
+#' @param maxit The number of iterations allowed for each imputation process.
+#'  See the `mice` package documentation for details.
+#'  Default: 30
+#' @param verbose Defaults to FALSE, meaning progress information from the
+#'  `mice` package is not printed out to the console.
+#'  Default: FALSE
+#' @param ... Additional arguments for the `mice::mice` function and any particular
+#'  imputation method/function. See each function/package documentation for details.
+#' @return Function returns `long_data` with additional columns of imputed values.
+#' @details The function returns the dataset supplied to the `long_data` argument
+#'  along with `M` additional columns populated with the imputed values.
+#' @examples 
+#' 	\dontrun{
+#'     data_to_impute <- SGPdata::sgpData_LONG_COVID
+#'
+#'     ###   Read in STEP 0 SGP configuration scripts
+#'     source("SGP_CONFIG/STEP_0/Impute_2023/Growth.R")
+#'     source("SGP_CONFIG/STEP_0/Impute_2023/Status.R")
+#'     Test_Data_LONG <-
+#'         imputeScaleScore(
+#'             long_data = data_to_impute,
+#'             growth.config = growth_config_2023,
+#'             status.config = status_config_2023,
+#'             M = 1)
 #'  }
-#' }
-#' @seealso
-#'  \code{\link[parallel]{detectCores}}, \code{\link[parallel]{mclapply}}, \code{\link[parallel]{makeCluster}}, \code{\link[parallel]{RNGstreams}}, \code{\link[parallel]{clusterApply}}
-#'  \code{\link[data.table]{J}}, \code{\link[data.table]{setattr}}, \code{\link[data.table]{setkey}}, \code{\link[data.table]{dcast.data.table}}, \code{\link[data.table]{melt.data.table}}, \code{\link[data.table]{as.data.table}}, \code{\link[data.table]{rbindlist}}
+#' @seealso 
+#'  \code{\link[parallel]{detectCores}}, \code{\link[parallel]{makeCluster}}, \code{\link[parallel]{RNGstreams}}, \code{\link[parallel]{clusterApply}}
+#'  \code{\link[data.table]{data.table-package}}, \code{\link[data.table]{setkey}}, \code{\link[data.table]{dcast.data.table}}, \code{\link[data.table]{melt.data.table}}, \code{\link[data.table]{setattr}}, \code{\link[data.table]{rbindlist}}, \code{\link[data.table]{as.data.table}}
 #'  \code{\link[utils]{head}}
 #'  \code{\link[stats]{formula}}, \code{\link[stats]{setNames}}
-#'  \code{\link[mice]{make.blocks}}, \code{\link[mice]{make.predictorMatrix}}, \code{\link[mice]{mice}}, \code{\link[mice]{ibind}}, \code{\link[mice]{densityplot.mids}}, \code{\link[mice]{complete.mids}}
+#'  \code{\link[mice]{make.blocks}}, \code{\link[mice]{mice}}, \code{\link[mice]{ibind}}, \code{\link[mice]{complete.mids}}, \code{\link[mice]{densityplot.mids}}
 #'  \code{\link[callr]{r}}
 #'  \code{\link[grDevices]{pdf}}, \code{\link[grDevices]{dev}}
 #'  \code{\link[graphics]{plot.default}}
 #' @rdname imputeLongData
-#' @export
-#' @importFrom parallel detectCores mclapply makeCluster clusterSetRNGStream clusterExport clusterEvalQ parSapply stopCluster
-#' @importFrom data.table SJ setnames setkey setkeyv dcast melt setattr as.data.table key rbindlist
+#' @export 
+#' @importFrom parallel detectCores makeCluster clusterSetRNGStream clusterExport clusterEvalQ parSapply stopCluster
+#' @importFrom data.table data.table setkey setkeyv dcast melt setnames setattr rbindlist as.data.table key
 #' @importFrom utils tail head
 #' @importFrom stats as.formula setNames
-#' @importFrom mice make.blocks make.predictorMatrix mice ibind densityplot complete
+#' @importFrom mice make.blocks mice ibind complete densityplot
 #' @importFrom callr r
 #' @importFrom grDevices pdf dev.off
 #' @importFrom graphics plot
@@ -790,49 +853,50 @@ imputeLongData =
 
     ##  Save some diagnostic plots
     if (is.null(sample.size)) {
-    if (cohort.iter$analysis.type == "GROWTH") {
-      imp.type <- "GROWTH_"
-    } else {
-      imp.type <- "STATUS_"
-    }
+      if (cohort.iter$analysis.type == "GROWTH") {
+        imp.type <- "GROWTH_"
+      } else {
+        imp.type <- "STATUS_"
+      }
 
-    grDevices::pdf(
-      file =
-        file.path(
-          diagn.dir,
-          paste0("Grade_", current.grade, "_", current.year, "_", imp.type,
-                 gsub("[.]", "", impute.method),
-                 "_M_", M, "__maxit_", maxit,
-                 ifelse(is.null(group), "", paste0("_x_", group)),
-                 "__converge.pdf"
+      grDevices::pdf(
+        file =
+          file.path(
+            diagn.dir,
+            paste0("Grade_", current.grade, "_", current.year, "_", imp.type,
+                  gsub("[.]", "", impute.method),
+                  "_M_", M, "__maxit_", maxit,
+                  ifelse(is.null(group), "", paste0("_x_", group)),
+                  "__converge.pdf"
+            )
           )
-        )
-    )
-    print(graphics::plot(imp))
-    invisible(grDevices::dev.off())
+      )
+      print(graphics::plot(imp))
+      invisible(grDevices::dev.off())
 
-    grDevices::pdf(
-      file =
-        file.path(
-          diagn.dir,
-          paste0("Grade_", current.grade, "_", current.year, "_", imp.type,
-                 gsub("[.]", "", impute.method),
-                 "_M_", M, "__maxit_", maxit,
-                 ifelse(is.null(group), "", paste0("_x_", group)),
-                 "__density.pdf"
-          )
-        ),
-      width = 11, height = 8
-    )
-    tryCatch(
+      grDevices::pdf(
+        file =
+          file.path(
+            diagn.dir,
+            paste0("Grade_", current.grade, "_", current.year, "_", imp.type,
+                  gsub("[.]", "", impute.method),
+                  "_M_", M, "__maxit_", maxit,
+                  ifelse(is.null(group), "", paste0("_x_", group)),
+                  "__density.pdf"
+            )
+          ),
+        width = 11, height = 8
+      )
+      tryCatch(
         print(mice::densityplot(
           imp,
           eval(parse(text = paste0("~", paste(hifocus.vars, collapse = " + "))))
         )),
         error = function(e) TRUE
-    ) -> err.tf
-    if (is.logical(err.tf)) print(mice::densityplot(imp)) else rm(err.tf)
-    invisible(grDevices::dev.off())
+      ) -> err.tf
+      if (is.logical(err.tf)) print(mice::densityplot(imp)) else rm(err.tf)
+      invisible(grDevices::dev.off())
+    }
 
     ###  Format and store results
     if (cohort.iter$analysis.type == "STATUS") {
