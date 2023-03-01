@@ -18,13 +18,13 @@
 #' @param ... PARAM_DESCRIPTION
 #' @return OUTPUT_DESCRIPTION
 #' @details DETAILS
-#' @examples 
+#' @examples
 #' \dontrun{
 #' if(interactive()){
 #'  #EXAMPLE1
 #'  }
 #' }
-#' @seealso 
+#' @seealso
 #'  \code{\link[parallel]{detectCores}}, \code{\link[parallel]{mclapply}}, \code{\link[parallel]{makeCluster}}, \code{\link[parallel]{RNGstreams}}, \code{\link[parallel]{clusterApply}}
 #'  \code{\link[data.table]{J}}, \code{\link[data.table]{setattr}}, \code{\link[data.table]{setkey}}, \code{\link[data.table]{dcast.data.table}}, \code{\link[data.table]{melt.data.table}}, \code{\link[data.table]{as.data.table}}, \code{\link[data.table]{rbindlist}}
 #'  \code{\link[utils]{head}}
@@ -34,7 +34,7 @@
 #'  \code{\link[grDevices]{pdf}}, \code{\link[grDevices]{dev}}
 #'  \code{\link[graphics]{plot.default}}
 #' @rdname imputeLongData
-#' @export 
+#' @export
 #' @importFrom parallel detectCores mclapply makeCluster clusterSetRNGStream clusterExport clusterEvalQ parSapply stopCluster
 #' @importFrom data.table SJ setnames setkey setkeyv dcast melt setattr as.data.table key rbindlist
 #' @importFrom utils tail head
@@ -51,10 +51,12 @@ imputeLongData =
     status.config = NULL,
     growth.config = NULL,
     focus.variable = "SCALE_SCORE",
+    focus.years = NULL,
     student.factors = NULL,
     group = NULL,
     impute.long = FALSE,
     impute.method = NULL,
+    formula.specs = list(simple = TRUE, random.slope = FALSE),
     parallel.config = NULL, # define cores, packages, cluster.type
     seed = 4224L,
     M = 15,
@@ -66,10 +68,12 @@ imputeLongData =
   call <- match.call()
 
   ###  Avoid "Undefined global functions or variables:" from R CMD check
-  ID <- VALID_CASE <- YEAR <- CONTENT_AREA <- GRADE <- .imp <- ALL_NA <- NULL
+  ID <- VALID_CASE <- YEAR <- CONTENT_AREA <- GRADE <- .imp <- ALL_NA <-
+    s <- mm <- pconf <- grpV <- focV <- mxt <- mth <- blk <- fml <- N <- NULL
 
   ###  Initial checks
-  if (!dir.exists(diagn.dir <- file.path(plot.dir, "imputeLongData", "diagnostic_plots"))) {
+  diagn.dir <- file.path(plot.dir, "imputeLongData", "diagnostic_plots")
+  if (!dir.exists(diagn.dir)) {
       dir.create(diagn.dir, recursive = TRUE)
   }
 
@@ -121,19 +125,23 @@ imputeLongData =
   ###  Cycle through configs to get results by cohort
   res.list <- vector(mode = "list", length = length(configs))
 
+  message("\n\tImputation with `imputeLongData` started: ", date())
+
+  started.impute <- proc.time()
+
   for (K in seq(configs)) {
     cohort.iter <- configs[[K]]
     names(cohort.iter) <- gsub("^sgp[.]", "", names(cohort.iter))
     grade.length <- length(cohort.iter[["grade.sequences"]])
 
-    cohort.lookup <-
-      data.table::SJ(
-        "VALID_CASE",
-        utils::tail(cohort.iter[["content.areas"]], grade.length),
-        utils::tail(cohort.iter[["panel.years"]], grade.length),
-        cohort.iter[["grade.sequences"]]
+    cohort_lookup <-
+      data.table::data.table(
+        VALID_CASE = "VALID_CASE",
+        CONTENT_AREA =
+            utils::tail(cohort.iter[["content.areas"]], grade.length),
+        YEAR = utils::tail(cohort.iter[["panel.years"]], grade.length),
+        GRADE = cohort.iter[["grade.sequences"]]
       ) |>
-      data.table::setnames(getKey(long_data) %w/o% "ID") |>
         data.table::setkey(YEAR) |> # ensure lookup table is ordered by years.
           data.table::setkey(NULL)  # NULL out key so doesn't corrupt the join in dcast.
 
@@ -144,12 +152,14 @@ imputeLongData =
     current.grade <- utils::tail(unique(cohort.iter[["grade.sequences"]]), 1)
     prior.grades <- utils::head(unique(cohort.iter[["grade.sequences"]]), -1)
 
+    sample.size <- cohort.iter[["sample.size"]]
+
     if (cohort.iter$analysis.type == "GROWTH") {
       ###  convert long to wide
       wide_data <-
         data.table::dcast(
           data =
-            long_data[cohort.lookup][,
+            long_data[cohort_lookup][,
               c(getKey(long_data), long.to.wide.vars),
               with = FALSE
             ],
@@ -160,8 +170,11 @@ imputeLongData =
 
       ###  Exclude kids missing IN current AND most recent year/grade's data
       ###  (keeps them if in data with missing score, but set to "VALID_CASE")
-      tmp.vcase <- paste0(paste0("VALID_CASE.", c(utils::tail(prior.grades, 1), current.grade)),
-                          ".", rep(unique(cohort.iter$content.areas), each = 2))
+      tmp.vcase <-
+        paste0(
+          paste0("VALID_CASE.", c(utils::tail(prior.grades, 1), current.grade)),
+          ".", rep(unique(cohort.iter$content.areas), each = 2)
+        )
       excl.idx <-
         Reduce(intersect,
                lapply(tmp.vcase, \(f) which(is.na(wide_data[, get(f)])))
@@ -199,13 +212,13 @@ imputeLongData =
         )
       long_final[,
         CONTENT_AREA :=
-          as.character(factor(GRADE, labels = cohort.lookup[["CONTENT_AREA"]]))
+          as.character(factor(GRADE, labels = cohort_lookup[["CONTENT_AREA"]]))
       ][,
         YEAR :=
-          as.character(factor(GRADE, labels = cohort.lookup[["YEAR"]]))
+          as.character(factor(GRADE, labels = cohort_lookup[["YEAR"]]))
       ][,
         GRADE :=
-          as.character(factor(GRADE, labels = cohort.lookup[["GRADE"]]))
+          as.character(factor(GRADE, labels = cohort_lookup[["GRADE"]]))
       ]
 
       if (impute.long) {
@@ -223,7 +236,8 @@ imputeLongData =
             if (length(group)) {
               tmp.imv <- paste0("IMV___", s.var, "___", group)
               long_final[,
-                eval(tmp.imv) := mean(get(s.var), na.rm = TRUE), by = c("GRADE", group)
+                eval(tmp.imv) := mean(get(s.var), na.rm = TRUE),
+                by = c("GRADE", group)
               ]
               long_final[,
                 eval(tmp.imv) := scale(get(tmp.imv)), keyby = "GRADE"
@@ -255,7 +269,7 @@ imputeLongData =
 
     } else {  #  END "GROWTH"  --  Begin "STATUS"
       ##  Create `wide_data` and group level summary (`group_smry`)
-      status.lookup <- cohort.lookup[YEAR == current.year]
+      status_lookup <- cohort_lookup[YEAR == current.year]
 
       wide.fmla <-
         stats::as.formula(
@@ -266,7 +280,7 @@ imputeLongData =
       wide_data <-
         data.table::dcast(
           data =
-            long_data[status.lookup][,
+            long_data[status_lookup][,
               c(getKey(long_data), long.to.wide.vars),
               with = FALSE
             ],
@@ -276,10 +290,11 @@ imputeLongData =
         )
 
       if (!is.null(group)) {
-        group.lookup <-
-          unique(long_data[status.lookup, c("ID", group), with = FALSE])
-        wide_data <- # !duplicated(...) below takes 1st entry for kids in multiple schools
-          wide_data[group.lookup[!duplicated(group.lookup, by = "ID")]]
+        group_lookup <-
+          unique(long_data[status_lookup, c("ID", group), with = FALSE])
+        wide_data <-
+          # !duplicated(...) below takes 1st entry for kids in multiple schools
+          wide_data[group_lookup[!duplicated(group_lookup, by = "ID")]]
       }
 
       if (length(student.factors)) {
@@ -313,8 +328,8 @@ imputeLongData =
 
       if (length(group)) {
         group.vars <- paste0(group, ".", current.grade)
-        priors.lookup <- cohort.lookup[YEAR != current.year]
-          
+        priors_lookup <- cohort_lookup[YEAR != current.year]
+
         ##  Prior grade(s) summaries to use
         smry.eval.expression <-
           paste0("PRIOR_IMV__", focus.variable,
@@ -326,8 +341,8 @@ imputeLongData =
           )
 
         group_smry <-
-          long_data[priors.lookup][,
-              c("YEAR", "CONTENT_AREA", "GRADE", focus.variable, group),
+          long_data[priors_lookup][,
+              c("CONTENT_AREA", "GRADE", focus.variable, group),
               with = FALSE
           ][
             !is.na(get(group)),
@@ -342,7 +357,9 @@ imputeLongData =
 
         data.table::setnames(
           group_smry,
-          c(group, paste0(names(smry.eval.expression), ".", names(group_smry)[-1]))
+          c(group,
+            paste0(names(smry.eval.expression), ".", names(group_smry)[-1])
+          )
         )
 
         wide_data <- merge(wide_data, group_smry, by = group, all.x = TRUE)
@@ -356,21 +373,28 @@ imputeLongData =
       }
 
       long_final <-
-        long_data[status.lookup][,
+        long_data[status_lookup][,
           unique(c(key(long_data), long.to.wide.vars)), with = FALSE]
     } ###  END "STATUS"
 
     ##  Subset out scale scores and student background (factors)
-    if (!impute.long && cohort.iter$analysis.type == "GROWTH") {  #  done above for "STATUS"
+    ##  done above for "STATUS"
+    if (!impute.long && cohort.iter$analysis.type == "GROWTH") {
       subset.vars <- focus.vars <-
-        grep(paste0(focus.variable, "[.]", collapse = "|"), names(wide_data), value = TRUE)
+        grep(paste0(focus.variable, "[.]", collapse = "|"),
+             names(wide_data),
+             value = TRUE
+        )
       if (length(group)) {
         group.vars <- grep(group, names(wide_data), value = TRUE)
         subset.vars <- c(subset.vars, group.vars)
       }
       if (length(student.factors)) {
-        student.vars <- grep(paste0(student.factors, "[.]", collapse = "|"),
-                             names(wide_data), value = TRUE)
+        student.vars <-
+          grep(paste0(student.factors, "[.]", collapse = "|"),
+               names(wide_data),
+               value = TRUE
+          )
         subset.vars <- c(subset.vars, student.vars)
         for (sv in student.vars) {
           wide_data[is.na(get(sv)), eval(sv) := 0]
@@ -389,16 +413,16 @@ imputeLongData =
 
       # add in prior group level summaries if requested
       if (!is.null(cohort.iter[["status.years"]]) && length(group)) {
-        yr.length <- length(cohort.iter[["status.years"]])
+        yr.len <- length(cohort.iter[["status.years"]])
         unq.ca <- unique(cohort.iter[["content.areas"]])
-        priors.lookup <-
-          data.table::SJ(
-            "VALID_CASE",
-            rep(unq.ca, yr.length),
-            rep(cohort.iter[["status.years"]], each = length(unq.ca)),
-            rep(cohort.iter[["grade.sequences"]], each = length(unq.ca))
+
+        priors_lookup <-
+          data.table::data.table(
+            VALID_CASE = "VALID_CASE",
+            CONTENT_AREA = rep(unq.ca, yr.len),
+            YEAR = rep(cohort.iter[["status.years"]], each = length(unq.ca)),
+            GRADE = rep(cohort.iter[["grade.sequences"]], each = length(unq.ca))
           ) |>
-          data.table::setnames(getKey(long_data) %w/o% "ID") |>
             data.table::setkey(YEAR) |> # ensure lookup table is ordered by years.
               data.table::setkey(NULL)  # NULL out key so doesn't corrupt the join in dcast.
 
@@ -415,8 +439,8 @@ imputeLongData =
           )
 
         group_smry <-
-          long_data[priors.lookup][,
-            c("YEAR", "CONTENT_AREA", "GRADE", focus.variable, group),
+          long_data[priors_lookup][,
+            c("CONTENT_AREA", "GRADE", focus.variable, group),
             with = FALSE
           ][
             !is.na(get(group)),
@@ -429,9 +453,8 @@ imputeLongData =
               value.var = names(smry.eval.expression)
             )
 
-        tmp.grd.subj <- names(group_smry)[-1]
-        ##  Put in cross school mean for schools with no students in prior years
-        for (prior.smry in tmp.grd.subj) {
+        ##  Merge in summaries for appropriate grade/subject
+        for (prior.smry in names(group_smry)[-1]) {
           smry_names <-
             c(group, paste0("PRIOR_IMV__", focus.variable)) |>
               paste(prior.smry, sep = ".")
@@ -442,6 +465,7 @@ imputeLongData =
           wide_data <-
             merge(wide_data, sub_grp_smry, by = smry_names[1], all.x = TRUE)
 
+          # Use cross-school mean for schools with no students in prior years
           tmp.grp.mean <- mean(wide_data[, get(smry_names[2])], na.rm = TRUE)
           wide_data[
             is.na(get(smry_names[2])),
@@ -471,7 +495,9 @@ imputeLongData =
 
     if (!impute.long || cohort.iter$analysis.type == "STATUS") {
       ##  Clean up all NA groups (if necessary)
-      if (length(group) & toupper(impute.method) == "PANIMPUTE") {
+      if (length(group) &
+          toupper(impute.method) %in% c("PANIMPUTE", "JOMOIMPUTE")
+      ) {
         for (gv in group.vars) {
           if (cohort.iter$analysis.type == "GROWTH") {
             tmp.imp.var <- paste0(focus.variable, ".", sub(".+?[.]", "", gv))
@@ -479,7 +505,10 @@ imputeLongData =
 
             ## Check for clusters with all NA values
             na_check <-
-              wide_data[, list(ALL_NA = all(is.na(get(tmp.imp.var)))), keyby = gv]
+              wide_data[,
+                list(ALL_NA = all(is.na(get(tmp.imp.var)))),
+                keyby = gv
+              ]
 
             if (length(all.na.ids <- na_check[ALL_NA == TRUE, get(gv)])) {
               wide_data[get(gv) %in% all.na.ids, eval(gv) := NA]
@@ -527,10 +556,23 @@ imputeLongData =
 
       ##  arguments/objects for `mice`
       tmp.meth <-
-        c(rep("pmm", length(group.vars)),
+        c(rep("rf", length(group.vars)),
           rep(impute.method, length(focus.vars))
          ) |>
           stats::setNames(c(group.vars, focus.vars))
+      if (!is.null(focus.years)) {
+        hifocus.vars <-
+          paste(
+            focus.variable,
+            cohort_lookup[YEAR %in% focus.years][, GRADE],
+            cohort_lookup[YEAR %in% focus.years][, CONTENT_AREA],
+            sep = "."
+          )
+        tmp.meth[focus.vars %w/o% hifocus.vars] <- "pmm"
+      } else {
+        hifocus.vars <- focus.vars
+      }
+
       tmp.pred <- names(wide_data) %w/o% "ID"
 
       ###   `mice`/... argument alignment
@@ -554,21 +596,20 @@ imputeLongData =
             }
             tmp.grd.subj <- sub(".+?[.]", "", gv)
             tmp.imp.var <- paste0(focus.variable, ".", tmp.grd.subj)
-            tmp.rhs <- 
-              ifelse(length(group.vars) > 1,
-                paste0("factor(", group.vars %w/o% gv, ")"),
-                1
-              )
-              #  c(group.vars %w/o% gv, focus.vars %w/o% tmp.imp.var)
+            tmp.rhs <-
+              if (length(group.vars) > 1) {
+                paste0("factor(", group.vars %w/o% gv, ")")
+              } else 1
+
             if (length(student.factors)) {
-                tmp.rhs <-
-                  c(tmp.rhs,
-                    grep(
-                      paste0(student.factors, ".", tmp.grd.subj, collapse = "|"),
-                      tmp.pred,
-                      value = TRUE
-                    )
+              tmp.rhs <-
+                c(tmp.rhs,
+                  grep(
+                    paste0(student.factors, ".", tmp.grd.subj, collapse = "|"),
+                    tmp.pred,
+                    value = TRUE
                   )
+                )
             }
             tmp.fmla[[gv]] <-
               paste(gv, "~", paste(tmp.rhs, collapse = " + ")) |>
@@ -594,8 +635,14 @@ imputeLongData =
             tmp.gv <- grep(tmp.grd.subj, group.vars, value = TRUE)
             if (!length(tmp.gv)) tmp.gv <- group.vars # for STATUS configs
 
-            # SCALE_SCORE.X.Y.Z + I(clusterMeans(SCALE_SCORE.X.Y.Z, group)) + (1|group)
-            rhs <- paste(tmp.iv, collapse = " + ")
+            rhs <-
+              ifelse(!formula.specs$simple,
+                paste0(tmp.iv,
+                       "*I(clusterMeans(", tmp.iv, ", ", tmp.gv, "))",
+                       collapse = " + "
+                ),
+                paste0(tmp.iv, collapse = " + ")
+              )
 
             if (length(tmp.pr <- grep("PRIOR_IMV__", tmp.pred))) {
               rhs <-
@@ -603,27 +650,18 @@ imputeLongData =
                   paste0(tmp.pred[tmp.pr], collapse = " + ")
                 )
             }
+
             if (length(tmp.sf)) {
-              rhs <-
-                c(rhs,
-                  ifelse(toupper(impute.method) == "PANIMPUTE",
-                    paste0(tmp.sf, ":I(clusterMeans(", tmp.sf, ", ", tmp.gv, "))", collapse = " + "),
-                    paste0(tmp.sf, collapse = " + ")
-                  )
-                )
+              rhs <- c(rhs, paste0(tmp.sf, collapse = " + "))
             }
 
-            if (length(tmp.iv) && toupper(impute.method) == "PANIMPUTE") {
-              rhs <-
-                c(rhs,
-                  paste0("I(clusterMeans(", tmp.iv, ", ", tmp.gv, "))", collapse = " + ")
-                )
-              rslope <- paste(" +", tmp.iv, collapse = "") # NULL # 
+            if (formula.specs$random.slope) {
+              rslope <- paste(" +", tmp.iv, collapse = "")
             } else {
               rslope <- NULL
             }
 
-            if (toupper(impute.method) == "PANIMPUTE") {
+            if (toupper(impute.method) %in% c("PANIMPUTE", "JOMOIMPUTE")) {
               rhs <- c(rhs, paste0("(1", rslope, "|", tmp.gv, ")"))
             }
 
@@ -632,7 +670,8 @@ imputeLongData =
                 stats::as.formula()
           } else {
             tmp.fmla[[fv]] <-
-              paste(fv, "~", paste(c(tmp.iv, tmp.sf), collapse = " + ")) |> stats::as.formula()
+              paste(fv, "~", paste(c(tmp.iv, tmp.sf), collapse = " + ")) |>
+                stats::as.formula()
           }
         }
       } else {
@@ -673,159 +712,149 @@ imputeLongData =
       res <- NULL
     } else {
       ##  Add required data/objects to `imp_data` and save to tempdir()
-
       td <- tempdir()
       dput(td, file = "tdir")
 
       obj.list <- c(
         "seed", "M", "parallel.config", "group.vars", "focus.vars",
-        "maxit", "tmp.meth", "tmp.blok", "tmp.fmla"
+        "maxit", "tmp.meth", "tmp.blok", "tmp.fmla", "sample.size"
       )
       new.nms <-
-        c("s", "mm", "pconf", "grpV", "focV", "mxt", "mth", "blk", "fml")
-      
+        c("s", "mm", "pconf", "grpV", "focV", "mxt", "mth", "blk", "fml", "N")
+
       for (o in seq(obj.list)) {
-        data.table::setattr(wide_data, new.nms[o], get(obj.list[o]))
+        data.table::setattr(
+          wide_data, new.nms[o],
+          eval(parse(text = obj.list[o]))
+        )
       }
       data.table::setattr(wide_data, "row.names", NULL)
       saveRDS(wide_data, file = file.path(td, "imp_data.rds"), compress = FALSE)
 
-      if (parallel.config$cluster.type == "FORK") {
-        imp.tf <-
-          callr::r(
-            \() {
-                wdx <- getwd()
-                tdir <- dget("tdir")
-                setwd(tdir)
+      imp <-
+        callr::r(
+          \() {
+            tdir <- dget("tdir")
+            setwd(tdir)
 
-                imp_data <- readRDS("imp_data.rds")
-                imp.obj <-
-                    c("s", "mm", "pconf", "grpV", "focV",
-                    "mxt", "mth", "blk", "fml")
-                for (o in imp.obj) assign(o, attributes(imp_data)[[o]])
+          ##  Get exported objects from `imp_data` attributes
+            imp_data <- readRDS("imp_data.rds")
+            imp.obj <-
+              c("s", "mm", "pconf", "grpV", "focV", "mxt", "mth", "blk", "fml", "N")
+            for (o in imp.obj) assign(o, attributes(imp_data)[[o]])
 
-                set.seed(s, "L'Ecuyer")
+          ##  Make/set up cluster
+            tmp.cl <-
+              parallel::makeCluster(
+                spec = pconf$cores,
+                type = pconf$cluster.type
+              )
+            parallel::clusterSetRNGStream(cl = tmp.cl, iseed = s)
 
-                parallel::mclapply(
-                    X = 1:mm,
-                    FUN =
-                      \(f) {
-                        res <- 
-                          mice::mice(
-                              data = imp_data,
-                              m = 1,
-                              maxit = mxt,
-                              method = mth,
-                              visitSequence = c(grpV, focV),
-                              blocks = blk,
-                              formulas = fml
-                          )
-                        saveRDS(
-                            res,
-                            file = paste0("res_", f, ".rds"),
-                            compress = FALSE
-                        )
-                        res <- NULL
-                      },
-                    mc.cores = pconf$cores,
-                    mc.preschedule =
-                      ifelse(
-                        is.null(pconf$preschedule),
-                        TRUE, pconf$preschedule
-                      )
-                )
-                return(TRUE)
-            }
-          )
-        imp <- readRDS(file.path(td, "res_1.rds"))
-        for (i in 2:M) {
-          imp <-
-            mice::ibind(imp, readRDS(file.path(td,paste0("res_", i, ".rds"))))
-        }
-      } else {
-        imp <-
-          callr::r(
-            \() {
-              wdx <- getwd()
-              tdir <- dget("tdir")
-              setwd(tdir)
+            pkg.list <-
+              paste0("require(", c(pconf$packages, "data.table"), ")",
+                     collapse = ";"
+              )
+            parallel::clusterExport(
+              cl = tmp.cl,
+              varlist = list("pkg.list"),
+              envir = environment()
+            )
 
-            ##  Get exported objects from `imp_data` attributes
-              imp_data <- readRDS("imp_dat.rds")
-              imp.obj <-
-                  c("s", "mm", "pconf", "grpV", "focV",
-                   "mxt", "mth", "blk", "fml")
-              for (o in imp.obj) assign(o, attributes(imp_data)[[o]])
-            ##  Make/set up cluster
-              tmp.cl <-
-                parallel::makeCluster(
-                  spec = pconf$cores,
-                  type = pconf$cluster.type
-                )
-              parallel::clusterSetRNGStream(cl = tmp.cl, iseed = s)
-
-              pkg.list <- paste0("require(", pconf$packages, ")", collapse = ";")
+            if (pconf$cluster.type != "FORK") {
               parallel::clusterExport(
-                  cl = tmp.cl,
-                  varlist = list("pkg.list"),
-                  envir = environment()
+                cl = tmp.cl,
+                varlist = list(
+                  "N",
+                  "mxt",
+                  "mth",
+                  "blk",
+                  "fml",
+                  "focV",
+                  "grpV",
+                  "imp_data"
+                ),
+                envir = environment()
+              )
+            }
+
+            parallel::clusterEvalQ(
+              cl = tmp.cl,
+              expr = eval(parse(text = pkg.list))
+            )
+
+            res <-
+              parallel::parSapply(
+                cl = tmp.cl,
+                X = 1:mm,
+                FUN =
+                  \(f) {
+                    sampleData <-
+                      function(data, samp.n) {
+                        cdata <- na.omit(data)
+                        if (is.character(samp.n)) {
+                          samp.n <-
+                            ceiling(
+                              nrow(cdata)*as.numeric(gsub("%", "", samp.n)) / 100
+                            )
+                        }
+                        if (samp.n >= nrow(cdata)) return(data)
+                        data.table::rbindlist(
+                          list(
+                            cdata[sample(1:nrow(cdata), samp.n), ],
+                            na.omit(data, invert = TRUE)
+                          )
+                        )
+                      }
+
+                    res.mice <-
+                      mice::mice(
+                        data =
+                          if (is.null(N)) {
+                            imp_data
+                          } else {
+                            sampleData(imp_data, N)
+                          },
+                        m = 1,
+                        maxit = mxt,
+                        method = mth,
+                        visitSequence = c(grpV, focV),
+                        blocks = blk,
+                        formulas = fml
+                      )
+                  },
+                simplify = FALSE
               )
 
-              if (pconf$cluster.type != "FORK") {
-                  parallel::clusterExport(
-                      cl = tmp.cl,
-                      varlist = list(
-                          "mxt",
-                          "mth",
-                          "blk",
-                          "fml",
-                          "focV",
-                          "grpV",
-                          "imp_data"
-                      ),
-                      envir = environment()
+            parallel::stopCluster(cl = tmp.cl)
+
+            if (is.null(N)) {
+              imp_data <- res[[1]]
+              for (i in 2:mm) imp_data <- mice::ibind(imp_data, res[[i]])
+            } else {
+              imp_data[, .imp := 0L]
+              for (i in 1:mm) {
+                imp_data <-
+                  data.table::rbindlist(
+                    list(
+                      imp_data,
+                      data.table::as.data.table(
+                        mice::complete(res[[i]], action = "long"),
+                        key = "ID"
+                      )[, .id := NULL][, .imp := i]
+                    ),
+                    use.names = TRUE
                   )
               }
-
-              parallel::clusterEvalQ(
-                  cl = tmp.cl,
-                  expr = eval(parse(text = pkg.list))
-              )
-
-              res <-
-                  parallel::parSapply(
-                      cl = tmp.cl,
-                      X = 1:mm,
-                      FUN =
-                          \(f) {
-                          res.mice <-
-                              mice::mice(
-                                  data = imp_data,
-                                  m = 1,
-                                  maxit = mxt,
-                                  method = mth,
-                                  visitSequence = c(grpV, focV),
-                                  blocks = blk,
-                                  formulas = fml
-                              )
-                          },
-                      simplify = FALSE
-                  )
-
-              parallel::stopCluster(cl = tmp.cl)
-
-              res.out <- res[[1]]
-              for (i in 2:mm) res.out <- mice::ibind(res.out, res[[i]])
-
-              return(res.out)
-              return(TRUE)
+            }
+            return(imp_data)
           }
         )
-      }
       frm.tf <- file.remove("tdir")
     }
 
     ##  Save some diagnostic plots
+    if (is.null(sample.size)) {
     if (cohort.iter$analysis.type == "GROWTH") {
       imp.type <- "GROWTH_"
     } else {
@@ -833,7 +862,7 @@ imputeLongData =
     }
 
     grDevices::pdf(
-      file = 
+      file =
         file.path(
           diagn.dir,
           paste0("Grade_", current.grade, "_", current.year, "_", imp.type,
@@ -866,7 +895,7 @@ imputeLongData =
       tryCatch(
         print(mice::densityplot(
           imp,
-          eval(parse(text = paste0("~", paste(focus.vars, collapse = " + "))))
+          eval(parse(text = paste0("~", paste(hifocus.vars, collapse = " + "))))
         )),
         error = function(e) TRUE
       ) -> err.tf
@@ -875,6 +904,7 @@ imputeLongData =
       print(mice::densityplot(imp))
     }
     invisible(grDevices::dev.off())
+    }
 
     ###  Format and store results
     if (!impute.long || cohort.iter$analysis.type == "STATUS") {
@@ -883,6 +913,8 @@ imputeLongData =
       } else {
         long.ids <- c("ID", ".imp")
       }
+
+      if (is.null(sample.size)) {
       wide_imputed <-
         data.table::as.data.table(
           mice::complete(imp, action = "long", include = TRUE)
@@ -893,6 +925,16 @@ imputeLongData =
             variable.name = "GRADE",
             measure.vars = focus.vars
           )
+      } else {
+        wide_imputed <-
+          data.table::melt(
+            data = imp,
+            id.vars = long.ids,
+            value.name = focus.variable,
+            variable.name = "GRADE",
+            measure.vars = focus.vars
+          )
+      }
 
       if (cohort.iter$analysis.type == "STATUS") {
         wide_imputed[,
@@ -923,7 +965,10 @@ imputeLongData =
         wide_imputed[,
           CONTENT_AREA :=
             gsub(
-              paste(paste0(".*", c(prior.grades, current.grade), "."), collapse = "|"),
+              paste(
+                paste0(".*", c(prior.grades, current.grade), "."),
+                collapse = "|"
+              ),
               "", GRADE
             )
         ][,
@@ -985,11 +1030,10 @@ imputeLongData =
     } else {
       res.list[[K]] <- wide_imputed[long_final]
     }
-    # res.list[[K]] <- wide_imputed[long_final]
     rm(list = c("long_final", "wide_data", "wide_imputed", "imp"))
     invisible(gc())
     message(
-      "\n\tFinished with ", current.year, " Grade ", current.grade,
+      "\n\t\tFinished with ", current.year, " Grade ", current.grade,
       ": ", date()
     )
   }  ###  END K
@@ -1032,5 +1076,10 @@ imputeLongData =
 
     final_imp_data <- final_imp_data[long_data]
   }
+
+  message(
+    "\n\tImputation with `imputeLongData` completed in ",
+    convertTime(timeTaken(started.impute))
+  )
   return(final_imp_data)
 }

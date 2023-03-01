@@ -20,16 +20,25 @@
   (x - mean(y, na.rm = rm.na)) / stats::sd(y, na.rm = rm.na)
 }
 
-##  parMICE Internal function
-`miceInt` = function(data, maxit, meth, visit, bloks, frmlas) {
-    mice::mice(
-        data = data,
-        m = 1,
-        maxit = maxit,
-        method = meth,
-        visitSequence = visit,
-        blocks = bloks,
-        formulas = frmlas
-    )
-}
+##  timing functions
+`timeTaken` =
+  function(started.at) {
+    format = function(secs) {
+      secs.integer = as.integer(secs)
+      sprintf("%02d:%02d:%02d:%.3f",
+        secs.integer%/%86400L,
+        (secs.integer%/%3600L)%%24L,
+        (secs.integer%/%60L)%%60L,
+        secs%%60L)
+    }
+    tt = proc.time() - started.at
+    format(tt[3L])
+  } ###   From SGP package: timetakenSGP function
 
+`convertTime` =
+function(tmp.time) {
+  tmp <- tail(c(0, 0, 0, as.numeric(unlist(strsplit(tmp.time, ":")))), 4)
+  tmp.label <- c("Day", "Hour", "Minute", "Second")
+  tmp.label[which(tmp!=1)] <- paste0(tmp.label, "s")[which(tmp!=1)]
+  return(paste(paste(tmp[tmp!=0], tmp.label[tmp!=0]), collapse=", "))
+} ###   From SGP package: convertTime
