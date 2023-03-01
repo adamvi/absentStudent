@@ -6,10 +6,11 @@
 #' @param status.config PARAM_DESCRIPTION, Default: NULL
 #' @param growth.config PARAM_DESCRIPTION, Default: NULL
 #' @param focus.variable PARAM_DESCRIPTION, Default: 'SCALE_SCORE'
+#' @param focus.years PARAM_DESCRIPTION, Default: FALSE
 #' @param student.factors PARAM_DESCRIPTION, Default: NULL
 #' @param group PARAM_DESCRIPTION, Default: NULL
-#' @param impute.long PARAM_DESCRIPTION, Default: FALSE
 #' @param impute.method PARAM_DESCRIPTION, Default: NULL
+#' @param formula.specs PARAM_DESCRIPTION, Default: FALSE
 #' @param parallel.config PARAM_DESCRIPTION, Default: NULL
 #' @param seed PARAM_DESCRIPTION, Default: 4224
 #' @param M PARAM_DESCRIPTION, Default: 15
@@ -54,7 +55,6 @@ imputeLongData =
     focus.years = NULL,
     student.factors = NULL,
     group = NULL,
-    impute.long = FALSE,
     impute.method = NULL,
     formula.specs = list(simple = TRUE, random.slope = FALSE),
     parallel.config = NULL, # define cores, packages, cluster.type
@@ -210,62 +210,16 @@ imputeLongData =
           variable.name = "GRADE",
           measure.vars = meas.list
         )
+      
       long_final[,
-        CONTENT_AREA :=
-          as.character(factor(GRADE, labels = cohort_lookup[["CONTENT_AREA"]]))
-      ][,
-        YEAR :=
-          as.character(factor(GRADE, labels = cohort_lookup[["YEAR"]]))
-      ][,
-        GRADE :=
-          as.character(factor(GRADE, labels = cohort_lookup[["GRADE"]]))
+          VALID_CASE := "VALID_CASE"
+      ][, CONTENT_AREA :=
+            as.character(factor(GRADE, labels = cohort_lookup[["CONTENT_AREA"]]))
+      ][, YEAR :=
+            as.character(factor(GRADE, labels = cohort_lookup[["YEAR"]]))
+      ][, GRADE :=
+            as.character(factor(GRADE, labels = cohort_lookup[["GRADE"]]))
       ]
-
-      if (impute.long) {
-        tmp.focus.variable <- focus.variable
-        ##  Convert character/factor to numeric (0/1) data
-        student.vars <-
-          grep(
-            paste(student.factors, collapse = "|"),
-            focus.variable,
-            value = TRUE
-          )
-        if (length(student.vars)) {
-          for (s.var in student.vars) {
-            long_final[, eval(s.var) := as.integer(factor(get(s.var))) - 1L]
-            if (length(group)) {
-              tmp.imv <- paste0("IMV___", s.var, "___", group)
-              long_final[,
-                eval(tmp.imv) := mean(get(s.var), na.rm = TRUE),
-                by = c("GRADE", group)
-              ]
-              long_final[,
-                eval(tmp.imv) := scale(get(tmp.imv)), keyby = "GRADE"
-              ]
-              long_final[is.na(get(tmp.imv)), eval(tmp.imv) := 0]
-              tmp.focus.variable <- c(tmp.focus.variable, tmp.imv)
-            }
-          }
-        }
-
-        if (length(group)) {
-          tmp.imv <- paste0("IMV___", focus.variable, "___", group)
-          long_final[, eval(tmp.imv) :=
-            mean(get(focus.variable), na.rm = TRUE), by = c("GRADE", group)]
-          long_final[, eval(tmp.imv) :=
-            scale(get(tmp.imv)), keyby = "GRADE"]
-          long_final[is.na(get(tmp.imv)), eval(tmp.imv) := 0]
-          tmp.focus.variable <- c(tmp.focus.variable, tmp.imv)
-        }
-
-        if (impute.method %in% c("2l.pan", "2l.lmer", "2l.norm")) {
-          long_final[, ID := as.integer(ID)]
-        } else {
-          long_final[, ID := as.character(ID)]
-        }
-        long_final[, GRADE := as.numeric(GRADE)]
-      }
-      long_final[, VALID_CASE := "VALID_CASE"]
 
     } else {  #  END "GROWTH"  --  Begin "STATUS"
       ##  Create `wide_data` and group level summary (`group_smry`)
@@ -379,7 +333,7 @@ imputeLongData =
 
     ##  Subset out scale scores and student background (factors)
     ##  done above for "STATUS"
-    if (!impute.long && cohort.iter$analysis.type == "GROWTH") {
+    if (cohort.iter$analysis.type == "GROWTH") {
       subset.vars <- focus.vars <-
         grep(paste0(focus.variable, "[.]", collapse = "|"),
              names(wide_data),
@@ -493,7 +447,6 @@ imputeLongData =
     ###   IMPUTE
     #####
 
-    if (!impute.long || cohort.iter$analysis.type == "STATUS") {
       ##  Clean up all NA groups (if necessary)
       if (length(group) &
           toupper(impute.method) %in% c("PANIMPUTE", "JOMOIMPUTE")
@@ -677,24 +630,6 @@ imputeLongData =
       } else {
         tmp.fmla <- call[["formulas"]]
       }
-    } else { # impute.long
-      wide_data <-
-        long_final[,
-          c("ID", "GRADE", tmp.focus.variable %w/o% group),
-          with = FALSE
-        ]
-
-      if (is.null(impute.method)) {
-        tmp.meth <- "2l.pan"
-      } else {
-        tmp.meth <- impute.method
-      }
-      tmp.meth <- stats::setNames(tmp.meth, focus.variable)
-
-      tmp.pred <- mice::make.predictorMatrix(data = wide_data)
-      tmp.pred[focus.variable, "ID"] <- -2
-      tmp.pred[focus.variable, "GRADE"] <- 2 # random effect for GRADE (time)
-    }
 
     if (parexecute == "SEQ") {
       imp <-
@@ -867,7 +802,6 @@ imputeLongData =
           diagn.dir,
           paste0("Grade_", current.grade, "_", current.year, "_", imp.type,
                  gsub("[.]", "", impute.method),
-                 ifelse(impute.long, "_LONG", ""),
                  "_M_", M, "__maxit_", maxit,
                  ifelse(is.null(group), "", paste0("_x_", group)),
                  "__converge.pdf"
@@ -883,7 +817,6 @@ imputeLongData =
           diagn.dir,
           paste0("Grade_", current.grade, "_", current.year, "_", imp.type,
                  gsub("[.]", "", impute.method),
-                 ifelse(impute.long, "_LONG", ""),
                  "_M_", M, "__maxit_", maxit,
                  ifelse(is.null(group), "", paste0("_x_", group)),
                  "__density.pdf"
@@ -891,30 +824,24 @@ imputeLongData =
         ),
       width = 11, height = 8
     )
-    if (!impute.long) {
-      tryCatch(
+    tryCatch(
         print(mice::densityplot(
           imp,
           eval(parse(text = paste0("~", paste(hifocus.vars, collapse = " + "))))
         )),
         error = function(e) TRUE
-      ) -> err.tf
-      if (is.logical(err.tf)) print(mice::densityplot(imp)) else rm(err.tf)
-    } else {
-      print(mice::densityplot(imp))
-    }
+    ) -> err.tf
+    if (is.logical(err.tf)) print(mice::densityplot(imp)) else rm(err.tf)
     invisible(grDevices::dev.off())
-    }
 
     ###  Format and store results
-    if (!impute.long || cohort.iter$analysis.type == "STATUS") {
-      if (cohort.iter$analysis.type == "STATUS") {
+    if (cohort.iter$analysis.type == "STATUS") {
         long.ids <- c("ID", ".imp", gv)
-      } else {
+    } else {
         long.ids <- c("ID", ".imp")
-      }
+    }
 
-      if (is.null(sample.size)) {
+    if (is.null(sample.size)) {
       wide_imputed <-
         data.table::as.data.table(
           mice::complete(imp, action = "long", include = TRUE)
@@ -925,7 +852,7 @@ imputeLongData =
             variable.name = "GRADE",
             measure.vars = focus.vars
           )
-      } else {
+    } else {
         wide_imputed <-
           data.table::melt(
             data = imp,
@@ -934,9 +861,9 @@ imputeLongData =
             variable.name = "GRADE",
             measure.vars = focus.vars
           )
-      }
+    }
 
-      if (cohort.iter$analysis.type == "STATUS") {
+    if (cohort.iter$analysis.type == "STATUS") {
         wide_imputed[,
           CONTENT_AREA := gsub(paste0(".*", current.grade, "[.]"), "", GRADE)
         ][,
@@ -958,7 +885,7 @@ imputeLongData =
             NA_GrpVar_IMP := NULL
           ]
         }
-      } else {
+    } else {
         wide_imputed[, GRADE := gsub(paste0(focus.variable, "."), "", GRADE)]
         unq.ca <- unique(cohort.iter[["content.areas"]])
 
@@ -982,9 +909,9 @@ imputeLongData =
                 labels = cohort.iter[["panel.years"]]
             ))
         ]
-      }
+    }
 
-      wide_imputed <-
+    wide_imputed <-
         data.table::dcast(
           data = wide_imputed,
           formula = as.formula(
@@ -994,26 +921,10 @@ imputeLongData =
             )),
           value.var = focus.variable
         )
-      if (cohort.iter$analysis.type == "STATUS") {
+    if (cohort.iter$analysis.type == "STATUS") {
         rekey <- key(wide_imputed) %w/o% gv
         wide_imputed[, eval(gv) := NULL]
         setkeyv(wide_imputed, rekey)
-      }
-    } else {
-      wide_imputed <-
-        data.table::as.data.table(
-          mice::complete(imp, action = "long", include = TRUE)
-        )[,
-          c(".imp", "ID", "YEAR", "GRADE", focus.variable),
-          with = FALSE
-        ]
-
-      wide_imputed <-
-        data.table::dcast(
-          data = wide_imputed[GRADE == current.grade, ],
-          formula = ID ~ .imp,
-          value.var = focus.variable
-        )
     }
 
     data.table::setnames(
