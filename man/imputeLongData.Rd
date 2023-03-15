@@ -139,12 +139,13 @@ The function returns the dataset supplied to the `long_data` argument
  }
 }
 \seealso{
-\code{\link[parallel]{detectCores}}, \code{\link[parallel]{makeCluster}}, \code{\link[parallel]{RNGstreams}}, \code{\link[parallel]{clusterApply}}
- \code{\link[data.table]{data.table-package}}, \code{\link[data.table]{setkey}}, \code{\link[data.table]{dcast.data.table}}, \code{\link[data.table]{melt.data.table}}, \code{\link[data.table]{setattr}}, \code{\link[data.table]{rbindlist}}, \code{\link[data.table]{as.data.table}}
+\code{\link[parallel]{detectCores}}
+ \code{\link[data.table]{data.table-package}}, \code{\link[data.table]{setkey}}, \code{\link[data.table]{dcast.data.table}}, \code{\link[data.table]{setattr}}, \code{\link[data.table]{as.data.table}}, \code{\link[data.table]{melt.data.table}}, \code{\link[data.table]{setcolorder}}
  \code{\link[utils]{head}}
+ \code{\link[arrow]{Table}}, \code{\link[arrow]{write_dataset}}, \code{\link[arrow]{open_dataset}}
  \code{\link[stats]{formula}}, \code{\link[stats]{setNames}}
- \code{\link[mice]{make.blocks}}, \code{\link[mice]{mice}}, \code{\link[mice]{ibind}}, \code{\link[mice]{complete.mids}}, \code{\link[mice]{densityplot.mids}}
- \code{\link[callr]{r}}
+ \code{\link[mice]{make.blocks}}, \code{\link[mice]{mice}}, \code{\link[mice]{densityplot.mids}}, \code{\link[mice]{complete.mids}}
  \code{\link[grDevices]{pdf}}, \code{\link[grDevices]{dev}}
  \code{\link[graphics]{plot.default}}
+ \code{\link[dplyr]{filter-joins}}
 }

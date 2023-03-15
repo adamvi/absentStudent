@@ -38,16 +38,16 @@
 #' @keywords KEYWORD_TERM
 #' @author AUTHOR [AUTHOR_2]
 #' @keywords KEYWORD_TERM
+#' @importFrom utils head tail combn
 #' @importFrom data.table SJ setnames setkey setkeyv dcast setattr data.table
-#' @importFrom stats setNames
+#' @importFrom stats as.formula setNames
 #' @importFrom naniar mcar_test gg_miss_upset gg_miss_fct
 #' @importFrom mice md.pattern
 #' @importFrom finalfit missing_plot missing_pairs extract_variable_label summary_factorlist ff_merge
 #' @importFrom ggplot2 scale_fill_gradient scale_fill_manual ylab xlab
 #' @importFrom tools toTitleCase
 #' @importFrom fixest fixef
-#' @importFrom utils combn
-#' @importFrom grDevices pdf dev.control recordPlot
+#' @importFrom grDevices pdf dev.control recordPlot dev.off
 #' @importFrom VIM mosaicMiss spineMiss
 #' @importFrom svglite svglite
 missingDataAnalysis =

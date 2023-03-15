@@ -6,7 +6,25 @@ Authors@R: c(person(given=c("Adam", "R."), family="VanIwaarden", email="avaniwaa
 Maintainer: Adam VanIwaarden <avaniwaarden@nciea.org>
 Depends: R (>= 4.1)
 Suggests: knitr, rmarkdown, mitml
-Imports: callr, crayon, data.table, dplyr, finalfit, fixest, ggplot2, graphics, grDevices, mice, naniar, parallel, pROC, stats, svglite, tools, utils, VIM
+Imports:
+        arrow,
+        crayon,
+        data.table,
+        dplyr,
+        finalfit,
+        fixest,
+        ggplot2,
+        graphics,
+        grDevices,
+        mice,
+        naniar,
+        parallel,
+        pROC,
+        stats,
+        svglite,
+        tools,
+        utils,
+        VIM
 URL: https://CenterForAssessment.github.io/absentStudent
 BugReports: https://github.com/CenterForAssessment/absentStudent/issues
 VignetteBuilder: knitr
