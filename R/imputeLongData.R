@@ -458,18 +458,30 @@ imputeLongData =
 
       # add in prior group level summaries if requested
       if (!is.null(cohort.iter[["status.years"]]) && length(group)) {
-        yr.len <- length(cohort.iter[["status.years"]])
-        unq.ca <- unique(cohort.iter[["content.areas"]])
-
         priors_lookup <-
           data.table::data.table(
-            VALID_CASE = "VALID_CASE",
-            CONTENT_AREA = rep(unq.ca, yr.len),
-            YEAR = rep(cohort.iter[["status.years"]], each = length(unq.ca)),
-            GRADE = rep(cohort.iter[["grade.sequences"]], each = length(unq.ca))
+            "VALID_CASE",
+            expand.grid(
+              unique(cohort.iter[["content.areas"]]),
+              unique(cohort.iter[["status.years"]]),
+              unique(cohort.iter[["grade.sequences"]])
+            )
           ) |>
-            data.table::setkey(YEAR) |> # ensure lookup table is ordered by years.
-              data.table::setkey(NULL)  # NULL out key so doesn't corrupt the join in dcast.
+            data.table::setnames( names(cohort_lookup) )  |>
+              data.table::setkey(YEAR) |> # ensure lookup table is ordered by years.
+                data.table::setkey(NULL)  # NULL out key (corrupt the join in dcast).
+
+        # yr.len <- length(cohort.iter[["status.years"]])
+        # unq.ca <- unique(cohort.iter[["content.areas"]])
+        # priors_lookup <-
+        #   data.table::data.table(
+        #     VALID_CASE = "VALID_CASE",
+        #     CONTENT_AREA = rep(unq.ca, yr.len),
+        #     YEAR = rep(cohort.iter[["status.years"]], each = length(unq.ca)),
+        #     GRADE = rep(cohort.iter[["grade.sequences"]], each = length(unq.ca))
+        #   ) |>
+        #     data.table::setkey(YEAR) |> # ensure lookup table is ordered by years.
+        #       data.table::setkey(NULL)  # NULL out key so doesn't corrupt the join in dcast.
 
         if (!arrow.tf) {
           data.table::setkeyv(long_data, getKey(long_data))

@@ -1,6 +1,6 @@
 Package: absentStudent
 Version: 0.0-0.5
-Date: 2023-2-9
+Date: 2023-5-30
 Title: Tools and wrapper functions for describing, analyzing and remediating missing student records in longitudinal data sets.
 Authors@R: c(person(given=c("Adam", "R."), family="VanIwaarden", email="avaniwaarden@nciea.org", role=c("aut", "cre")))
 Maintainer: Adam VanIwaarden <avaniwaarden@nciea.org>

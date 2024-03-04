@@ -408,7 +408,7 @@ missingDataAnalysis =
       tmp.label <- tools::toTitleCase(tolower(strsplit(focus.variable, "_|[.]")[[1]]))
 
       data.table::setattr(tmp_wide[["Avg_Focus_Var_Z"]], "label",
-        paste(c("Mean", tmp.label, "(Standardized)"), collapse = " "))
+        paste(c(tmp.label, "(Standardized)"), collapse = " "))
 
       all.iv <- c(fct.iv, "Avg_Focus_Var_Z", stu.iv)
       mod.iv <- c(stu.iv, "csw0(Avg_Focus_Var_Z)")
